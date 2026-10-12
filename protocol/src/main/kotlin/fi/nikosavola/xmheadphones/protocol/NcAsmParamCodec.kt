@@ -18,8 +18,7 @@ private const val NC_VALUE_DUAL: Byte = 0x02
 private const val ASM_ID_NORMAL: Byte = 0x00
 private const val ASM_ID_VOICE: Byte = 0x01
 
-/** V2 `ValueChangeStatus`. */
-private const val UNDER_CHANGING: Byte = 0x00
+/** V2 `ValueChangeStatus`. Only [CHANGED] means the device finished moving to the value. */
 private const val CHANGED: Byte = 0x01
 
 /** V2 `NcAsmMode`. */
@@ -153,7 +152,9 @@ private fun decodeV2(fields: ByteArray, noiseAdaptive: Boolean): SonyResponse.No
         }
     return SonyResponse.NoiseControl(
         state = state,
-        settled = fields[0] != UNDER_CHANGING,
+        // Only the value that means settled counts as settled: a status this client does not know is
+        // one it cannot claim the device finished with.
+        settled = fields[0] == CHANGED,
         adaptive = adaptive,
     )
 }

@@ -61,11 +61,25 @@ internal abstract class NumericField(
 ) : DataTypeImpl(extension, typeId) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    /** Null while the headset has not answered that part of its state yet. */
-    protected abstract fun value(state: XmHeadphonesState): Double?
+    /**
+     * What the field has to show.
+     *
+     * The difference between [Pending] and [Unavailable] is the whole reason this is not a nullable
+     * number: a headset that has not answered yet is worth waiting for, and one that will not answer
+     * is not, and Karoo shows "Searching" for the first and "unavailable" for the second. A field that
+     * cannot tell them apart searches for the whole ride.
+     */
+    protected sealed interface Reading {
+        @JvmInline value class Value(val value: Double) : Reading
 
-    /** False for a headset that does not have this field's feature at all. */
-    protected abstract fun offered(state: XmHeadphonesState): Boolean
+        /** The headset has not answered this yet, but it may still. */
+        data object Pending : Reading
+
+        /** The headset is not going to answer this. */
+        data object Unavailable : Reading
+    }
+
+    protected abstract fun reading(state: XmHeadphonesState): Reading
 
     override fun startStream(emitter: Emitter<StreamState>) {
         Timber.d("Start $typeId stream")
@@ -82,38 +96,54 @@ internal abstract class NumericField(
         }
     }
 
-    private fun XmHeadphonesState.toStreamState(): StreamState {
-        val current = value(this)
-        return when {
-            // A headset that never advertised the feature is not going to report it, so the field is
-            // unavailable rather than searching for the rest of the ride.
-            link == HeadphonesLink.Connected && !offered(this) -> StreamState.NotAvailable
-            link == HeadphonesLink.Connected && current != null ->
-                StreamState.Streaming(DataPoint(dataTypeId, mapOf(DataType.Field.SINGLE to current)))
-            // Connected but still waiting for this particular value, or on the way there: Karoo shows
-            // its own "Searching..." text, which is the right thing for a rider to see.
-            link == HeadphonesLink.Connected ||
-                link == HeadphonesLink.Searching ||
-                link == HeadphonesLink.Connecting -> StreamState.Searching
-            else -> StreamState.NotAvailable
+    private fun XmHeadphonesState.toStreamState(): StreamState =
+        when {
+            link == HeadphonesLink.Searching || link == HeadphonesLink.Connecting ->
+                StreamState.Searching
+            link != HeadphonesLink.Connected -> StreamState.NotAvailable
+            else ->
+                when (val reading = reading(this)) {
+                    is Reading.Value ->
+                        StreamState.Streaming(
+                            DataPoint(dataTypeId, mapOf(DataType.Field.SINGLE to reading.value)),
+                        )
+                    Reading.Pending -> StreamState.Searching
+                    Reading.Unavailable -> StreamState.NotAvailable
+                }
         }
-    }
 }
 
 internal class BatteryDataType(client: XmHeadphonesClient, extension: String) :
     NumericField(client, extension, FieldIds.BATTERY) {
-    override fun value(state: XmHeadphonesState): Double? = state.batteryPercent?.toDouble()
-
-    override fun offered(state: XmHeadphonesState): Boolean =
-        state.capabilities?.batteryShape != null
+    override fun reading(state: XmHeadphonesState): Reading {
+        // Bound locally: the property is computed, so it cannot be smart cast.
+        val percent = state.batteryPercent
+        return when {
+            percent != null -> Reading.Value(percent.toDouble())
+            // Connected, so the handshake is done: a headset with no battery function is not going to
+            // report one however long this waits.
+            state.capabilities?.batteryShape == null -> Reading.Unavailable
+            else -> Reading.Pending
+        }
+    }
 }
 
 internal class AmbientLevelDataType(client: XmHeadphonesClient, extension: String) :
     NumericField(client, extension, FieldIds.AMBIENT_LEVEL) {
-    override fun value(state: XmHeadphonesState): Double? =
-        (state.noiseCancelling as? NoiseCancelling.Ambient)?.level?.steps?.toDouble()
-
-    override fun offered(state: XmHeadphonesState): Boolean = state.supportsNoiseCancelling
+    override fun reading(state: XmHeadphonesState): Reading {
+        // Only ambient mode carries a level, so the level the rider last had stands in while noise
+        // cancelling or off is on, which is the level the slider will come back to.
+        val level =
+            (state.noiseCancelling as? NoiseCancelling.Ambient)?.level ?: state.lastAmbientLevel
+        return when {
+            level != null -> Reading.Value(level.steps.toDouble())
+            !state.supportsNoiseCancelling -> Reading.Unavailable
+            // Its noise control report arrived and carried no level, and it reports the level only
+            // while it is in ambient mode. Waiting for a later one would search for the whole ride.
+            state.noiseCancelling != null -> Reading.Unavailable
+            else -> Reading.Pending
+        }
+    }
 }
 
 /**

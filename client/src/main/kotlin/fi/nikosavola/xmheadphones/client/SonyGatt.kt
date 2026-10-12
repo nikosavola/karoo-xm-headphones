@@ -38,9 +38,6 @@ internal object SonyGatt {
     /** Headset to phone, table 2. */
     val NOTIFY_TABLE2: UUID = UUID.fromString("5b833c63-6bc7-4802-8e9a-723ceca4bd8f")
 
-    /** Read: the largest number of bytes the headset accepts in one write, big endian. */
-    val WRITABLE_VALUE_LENGTH: UUID = UUID.fromString("5b833c91-6bc7-4802-8e9a-723ceca4bd8f")
-
     val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
     /** Advertised by a headset that is accepting a control connection. */

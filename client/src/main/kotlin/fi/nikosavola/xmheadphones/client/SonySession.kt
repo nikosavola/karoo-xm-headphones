@@ -109,16 +109,16 @@ internal class SonySession(
     /** The sequence the next frame we send carries; the protocol has a two value sequence space. */
     private var dataSequence = 0
 
-    /** What the headset says it accepts in one write; null until it has said. */
-    @Volatile private var deviceWritableBytes: Int? = null
-
     /**
-     * What the link carries in one write, which is the ATT payload of the negotiated MTU until the
-     * MTU is negotiated. A headset's own answer cannot be trusted on its own: it may name more than
-     * the link will carry, and a write longer than the MTU is rejected by the stack without an error
-     * this client could see.
+     * Held for the length of one GATT write and nothing else.
+     *
+     * A write mutates the characteristic it goes through, and there is one characteristic for both
+     * commands and acknowledgements, so two writes from different coroutines would otherwise be able
+     * to overwrite each other's bytes between setting them and sending them. It is deliberately not
+     * [sendLock]: acknowledgements are written from the frame loop, and holding the command lock
+     * across that would deadlock against a reply that arrives before its own acknowledgement.
      */
-    @Volatile private var linkWriteBytes: Int = DEFAULT_WRITABLE_BYTES
+    private val writeLock = Mutex()
 
     /**
      * A response the session is waiting for.
@@ -192,26 +192,6 @@ internal class SonySession(
                 onNotification(characteristic.value?.copyOf() ?: return)
             }
 
-            @Deprecated("Deprecated in Java")
-            @Suppress("DEPRECATION")
-            override fun onCharacteristicRead(
-                gatt: BluetoothGatt,
-                characteristic: BluetoothGattCharacteristic,
-                status: Int,
-            ) {
-                if (characteristic.uuid != SonyGatt.WRITABLE_VALUE_LENGTH) return
-                val value = characteristic.value ?: return
-                readWritableLength(value)?.let { length ->
-                    deviceWritableBytes = length
-                    Timber.i("Headset accepts $length byte writes")
-                }
-            }
-
-            override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
-                if (status != BluetoothGatt.GATT_SUCCESS) return
-                linkWriteBytes = (mtu - ATT_HEADER_BYTES).coerceAtLeast(DEFAULT_WRITABLE_BYTES)
-                Timber.i("MTU $mtu, so $linkWriteBytes byte writes")
-            }
         }
 
     /**
@@ -247,8 +227,6 @@ internal class SonySession(
                     ?: throw IOException("no notify characteristic")
 
             subscribe()
-            negotiateMtu()
-            requestWritableLength()
 
             scope.launch { processIncoming() }
             handshake()
@@ -290,8 +268,9 @@ internal class SonySession(
             Timber.i("Not sending ${request::class.simpleName}: the headset does not advertise it")
             return false
         }
-        val frame = SonyMessageCodec.encode(request, capabilities, dataSequence)
-        return sendLock.withLock { writeAndAwaitAck(frame) }
+        return sendLock.withLock {
+            writeAndAwaitAck(SonyMessageCodec.encode(request, capabilities, dataSequence))
+        }
     }
 
     suspend fun setNoiseCancelling(state: NoiseCancelling): Boolean =
@@ -425,8 +404,9 @@ internal class SonySession(
         // Nothing is sent for a headset that never advertised the feature, and its absence is the
         // answer: a device that does not offer noise control has no noise control state to report.
         if (!request.supportedBy(capabilities)) return null
-        val frame = SonyMessageCodec.encode(request, capabilities, dataSequence)
-        return sendLock.withLock { exchange(frame, timeoutMs, matches) }
+        return sendLock.withLock {
+            exchange(SonyMessageCodec.encode(request, capabilities, dataSequence), timeoutMs, matches)
+        }
     }
 
     private suspend fun <T : Any> handshake(
@@ -462,7 +442,14 @@ internal class SonySession(
     private suspend fun writeAndAwaitAck(frame: MdrFrame): Boolean {
         repeat(SEND_ATTEMPTS) { attempt ->
             drainAcknowledgements()
-            if (!writeFrame(frame)) return false
+            if (!writeFrame(frame)) {
+                // The stack refuses a write while it is busy with another operation. That is a moment
+                // to wait out; giving up here would fail the whole handshake on a device whose stack
+                // enforces it.
+                Timber.d("Write refused, attempt ${attempt + 1} of $SEND_ATTEMPTS")
+                delay(WRITE_RETRY_DELAY_MS)
+                return@repeat
+            }
             val expected = inverse(frame.sequence)
             val acknowledged =
                 withTimeoutOrNull(ACK_TIMEOUT_MS) {
@@ -495,10 +482,10 @@ internal class SonySession(
 
     // region frames
 
-    private suspend fun writeFrame(frame: MdrFrame): Boolean {
-        val connection = gatt ?: return false
-        val characteristic = write ?: return false
-        return writeBytes(connection, characteristic, MdrFrameCodec.encode(frame))
+    private suspend fun writeFrame(frame: MdrFrame): Boolean = writeLock.withLock {
+        val connection = gatt ?: return@withLock false
+        val characteristic = write ?: return@withLock false
+        writeBytes(connection, characteristic, MdrFrameCodec.encode(frame))
     }
 
     @SuppressLint("MissingPermission") // the caller checks the permission before connecting
@@ -508,9 +495,11 @@ internal class SonySession(
         characteristic: BluetoothGattCharacteristic,
         bytes: ByteArray,
     ): Boolean {
-        // A frame longer than one write is split, and the headset reassembles it by scanning for the
-        // markers. Every frame this client sends fits in a single write.
-        val chunks = bytes.asList().chunked(minOf(deviceWritableBytes ?: MAX_WRITABLE_BYTES, linkWriteBytes))
+        // The payload a write carries at the default ATT MTU. No MTU is asked for, so nothing here
+        // has to wait on the stack being free mid-handshake, and a frame longer than this is split:
+        // the headset reassembles by scanning for the markers, which is what the reference clients do
+        // too. Every frame this client sends fits in one write in practice.
+        val chunks = bytes.asList().chunked(WRITE_CHUNK_BYTES)
         for (chunk in chunks) {
             characteristic.value = chunk.toByteArray()
             characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
@@ -547,43 +536,13 @@ internal class SonySession(
         if (!connection.writeDescriptor(cccd)) throw IOException("writeDescriptor refused")
     }
 
-    /** Best effort: a stack or a headset that refuses this keeps the default payload size. */
-    @SuppressLint("MissingPermission") // the caller checks the permission before connecting
-    private fun negotiateMtu() {
-        val connection = gatt ?: return
-        runCatching { connection.requestMtu(MTU_REQUEST) }
-            .onFailure { Timber.d("Could not ask for a larger MTU: ${it.message}") }
-    }
-
-    @SuppressLint("MissingPermission") // the caller checks the permission before connecting
-    private fun requestWritableLength() {
-        // Best effort: the BLE default is used if the headset does not answer, and every frame this
-        // client sends fits in it.
-        val connection = gatt ?: return
-        val characteristic =
-            connection.getService(SonyGatt.SERVICE)?.getCharacteristic(SonyGatt.WRITABLE_VALUE_LENGTH)
-        if (characteristic == null) {
-            Timber.d("No writable-length characteristic; using $DEFAULT_WRITABLE_BYTES")
-            return
-        }
-        runCatching { connection.readCharacteristic(characteristic) }
-            .onFailure { Timber.d("Could not read the writable length: ${it.message}") }
-    }
-
-    /** Big endian, and only a value a headset could plausibly accept is adopted. */
-    private fun readWritableLength(value: ByteArray): Int? {
-        if (value.size < 2) return null
-        val length = ((value[0].toInt() and 0xFF) shl 8) or (value[1].toInt() and 0xFF)
-        return length.takeIf { it in MIN_WRITABLE_BYTES..MAX_WRITABLE_BYTES }
-    }
-
     // endregion
 
     private companion object {
         const val FRAME_QUEUE = 64
         const val RESPONSE_BUFFER = 64
-        const val MTU_REQUEST = 512
-        const val ATT_HEADER_BYTES = 3
+        const val WRITE_CHUNK_BYTES = 20
+        const val WRITE_RETRY_DELAY_MS = 50L
         const val CONNECT_TIMEOUT_MS = 15_000L
         const val GATT_TIMEOUT_MS = 10_000L
         const val HANDSHAKE_TIMEOUT_MS = 5_000L
@@ -591,9 +550,6 @@ internal class SonySession(
         const val ACK_TIMEOUT_MS = 750L
         const val SEND_ATTEMPTS = 4
         const val POLL_INTERVAL_MS = 60_000L
-        const val DEFAULT_WRITABLE_BYTES = 20
-        const val MIN_WRITABLE_BYTES = 20
-        const val MAX_WRITABLE_BYTES = 512
 
         val DEVICE_INFO_QUESTIONS = listOf(DeviceInfoQuestion.ModelName, DeviceInfoQuestion.FirmwareVersion)
 

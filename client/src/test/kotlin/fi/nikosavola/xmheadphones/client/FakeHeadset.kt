@@ -34,6 +34,9 @@ internal class FakeHeadset(
     /** What the headset thinks it was last told, decoded from the write the client sent. */
     @Volatile var noiseCancelling: NoiseCancelling? = NoiseCancelling.Cancelling
 
+    /** When set, the headset pushes a notification of its own before it answers a set. */
+    @Volatile var interruptSets: Boolean = false
+
     /** Every frame the client wrote, in order, unparsed. */
     val received = CopyOnWriteArrayList<ByteArray>()
 

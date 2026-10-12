@@ -177,6 +177,31 @@ class XmHeadphonesClientTest {
     }
 
     @Test
+    fun `a notification arriving while a command is in flight does not stop it`() {
+        ble.grantPermissions()
+        headset = headsetWith()
+        headset.install()
+        connect()
+        // Every set now makes the headset report a change of its own before it answers.
+        headset.interruptSets = true
+
+        val accepted =
+            command {
+                client.setNoiseCancelling(
+                    NoiseCancelling.Ambient(AmbientLevel.fromStepsOrNull(6)!!, false),
+                )
+            }
+
+        assertTrue("the command went unanswered", accepted)
+        // The interleaved notification is applied too, and the command's own answer is what it ends on.
+        await {
+            client.state.value.noiseCancelling.takeIf {
+                it is NoiseCancelling.Ambient && it.level.steps == 6
+            }
+        }
+    }
+
+    @Test
     fun `a headset that does not advertise noise cancelling is not offered it`() {
         ble.grantPermissions()
         headset = headsetWith(functions = FakeHeadset.V1_FUNCTIONS - 0x62)
@@ -273,6 +298,27 @@ class XmHeadphonesClientTest {
     }
 
     @Test
+    fun `forgetting the headset reconnects, and commands still reach the new session`() {
+        ble.grantPermissions()
+        headset = headsetWith()
+        headset.install()
+        connect()
+
+        client.forget()
+
+        // The cancelled session clears the session field as it unwinds, so the next one has to wait
+        // for it: otherwise the stale cleanup can null the new session and every command after a
+        // forget silently goes nowhere.
+        headset.peripheral.advertise(untilMatched = true)
+        headset.peripheral.connect()
+        await {
+            client.state.value.takeIf { it.link == HeadphonesLink.Connected && it.battery != null }
+        }
+
+        assertTrue(command { client.setNoiseCancelling(NoiseCancelling.Off) })
+    }
+
+    @Test
     fun `a dropped link is picked up again`() {
         ble.grantPermissions()
         headset = headsetWith()
@@ -315,11 +361,6 @@ class XmHeadphonesClientTest {
             service(SonyGatt.SERVICE, advertised = true) {
                 characteristic(SonyGatt.WRITE, write = true, writeNoResponse = true)
                 characteristic(SonyGatt.NOTIFY, notify = true)
-                characteristic(
-                    SonyGatt.WRITABLE_VALUE_LENGTH,
-                    read = true,
-                    value = byteArrayOf(0x00, 0x14),
-                )
             }
         }
 

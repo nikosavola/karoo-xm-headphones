@@ -91,7 +91,12 @@ public class XmHeadphonesClient private constructor(private val context: Context
      */
     @Synchronized
     public fun stop() {
-        users = (users - 1).coerceAtLeast(0)
+        if (users == 0) {
+            // Nothing was held, so there is nothing to give up and no reason to keep the link alive.
+            Timber.d("Stop without a matching start")
+            return
+        }
+        users--
         if (users == 0 && job != null) {
             Timber.i("Last hold released; stopping in ${STOP_LINGER_MS / 1000} s")
             lingerJob?.cancel()

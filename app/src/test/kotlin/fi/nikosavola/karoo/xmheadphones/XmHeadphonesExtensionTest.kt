@@ -23,6 +23,7 @@ import io.hammerhead.karooext.models.InRideAlert
 import io.hammerhead.karooext.models.RideProfile
 import io.hammerhead.karooext.models.StreamState
 import io.hammerhead.karooext.models.ViewConfig
+import org.xmlpull.v1.XmlPullParser
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -195,6 +196,111 @@ class XmHeadphonesExtensionTest {
     }
 
     @Test
+    fun `the controller action connects on its own when no field is on the profile`() {
+        headset.noiseCancelling = NoiseCancelling.Cancelling
+        headset.install()
+        val host = karoo.host<XmHeadphonesExtension>()
+
+        // Nothing has asked for a connection, because no profile shows a headphone field, so the
+        // action has to borrow one. It is the first thing a rider will try, and the state it reads
+        // before the connection starts says Idle rather than "still searching".
+        host.bonusAction(XmHeadphonesExtension.ACTION_TOGGLE_NOISE_CANCELLING)
+        headset.connect()
+
+        karoo.awaitValue { true.takeIf { headset.noiseCancelling is NoiseCancelling.Off } }
+    }
+
+    @Test
+    fun `the ambient level reads as unavailable, not searching, when the headset never reports one`() {
+        // A headset in noise cancelling mode reports a level only while it is in ambient mode, so
+        // there is nothing coming and the field must not search for the whole ride.
+        headset.noiseCancelling = NoiseCancelling.Cancelling
+        headset.install()
+        val host = karoo.host<XmHeadphonesExtension>()
+        val ambient = host.startStream(FieldIds.AMBIENT_LEVEL)
+
+        karoo.system.setActiveRideProfile(profile(FieldIds.AMBIENT_LEVEL))
+        connected()
+
+        // What it settles on, not what it passed through: a field that cannot tell "no answer yet"
+        // from "no answer ever" sits on Searching here for the rest of the ride.
+        karoo.awaitValue { true.takeIf { ambient.items.lastOrNull() is StreamState.NotAvailable } }
+    }
+
+    @Test
+    fun `the level the rider had stands in while noise cancelling is on`() {
+        headset.noiseCancelling = NoiseCancelling.Ambient(AmbientLevel.fromStepsOrNull(9)!!, false)
+        headset.install()
+        val host = karoo.host<XmHeadphonesExtension>()
+        val ambient = host.startStream(FieldIds.AMBIENT_LEVEL)
+
+        karoo.system.setActiveRideProfile(profile(FieldIds.AMBIENT_LEVEL))
+        connected()
+        ambient.await(10_000) { it is StreamState.Streaming && it.dataPoint.singleValue == 9.0 }
+
+        headset.push(NoiseCancelling.Cancelling)
+        val mark = ambient.mark()
+        settle()
+
+        // The level has not changed, so the field has nothing new to say; what matters is that it does
+        // not start searching for a level a headset in noise cancelling mode will not send. The slider
+        // comes back to 9 when ambient sound is turned on again, so 9 is what it shows meanwhile.
+        assertTrue(
+            "the field started searching: ${ambient.items.drop(mark)}",
+            ambient.items.drop(mark).none { it is StreamState.Searching },
+        )
+        val last = ambient.items.last()
+        assertTrue(
+            "the field settled on $last",
+            last is StreamState.Streaming && last.dataPoint.singleValue == 9.0,
+        )
+    }
+
+    @Test
+    fun `a link of idle is not one a borrow can act on`() {
+        // The action reads the state right after starting the connection, and idle is what it says
+        // before the connection has been asked for. Waiting for it would end the action at once.
+        assertFalse(HeadphonesLink.Idle.isSettled())
+        assertFalse(HeadphonesLink.Searching.isSettled())
+        assertFalse(HeadphonesLink.Connecting.isSettled())
+
+        assertTrue(HeadphonesLink.Connected.isSettled())
+        assertTrue(HeadphonesLink.NoPermission.isSettled())
+        assertTrue(HeadphonesLink.BluetoothOff.isSettled())
+    }
+
+    @Test
+    fun `the extension info the manifest points at agrees with the code`() {
+        // Nothing else couples res/xml/extension_info.xml to the constants the code uses, and a
+        // mismatch registers a field Karoo draws with no data behind it.
+        val parser = karoo.app.resources.getXml(R.xml.extension_info)
+        val typeIds = mutableListOf<String>()
+        val actionIds = mutableListOf<String>()
+        var extensionId: String? = null
+        var event = parser.next()
+        while (event != XmlPullParser.END_DOCUMENT) {
+            if (event == XmlPullParser.START_TAG) {
+                when (parser.name) {
+                    "ExtensionInfo" -> extensionId = parser.getAttributeValue(null, "id")
+                    "DataType" ->
+                        parser.getAttributeValue(null, "typeId")?.let { typeIds += it }
+                    "BonusAction" ->
+                        parser.getAttributeValue(null, "actionId")?.let { actionIds += it }
+                    else -> Unit
+                }
+            }
+            event = parser.next()
+        }
+
+        assertEquals(XmHeadphonesExtension.EXTENSION_ID, extensionId)
+        assertEquals(
+            listOf(FieldIds.BATTERY, FieldIds.NOISE_CANCELLING, FieldIds.AMBIENT_LEVEL).sorted(),
+            typeIds.sorted(),
+        )
+        assertEquals(listOf(XmHeadphonesExtension.ACTION_TOGGLE_NOISE_CANCELLING), actionIds)
+    }
+
+    @Test
     fun `a headset that drops mid-ride raises an alert`() {
         headset.install()
         val host = karoo.host<XmHeadphonesExtension>()
@@ -244,8 +350,23 @@ class XmHeadphonesExtensionTest {
 
     private fun viewConfig() = ViewConfig(gridSize = 30 to 15, viewSize = 200 to 100, textSize = 14)
 
+    /**
+     * Lets the field react to the last change before the test asks what it settled on.
+     *
+     * A negative assertion needs a bounded wait rather than something to await: the behaviour under
+     * test is that nothing arrives at all, so there is no signal to wait for.
+     */
+    private fun settle() {
+        val deadline = System.currentTimeMillis() + SETTLE_MS
+        while (System.currentTimeMillis() < deadline) {
+            RobolectricPump.pumpMainLooper()
+            Thread.sleep(10)
+        }
+    }
+
     private companion object {
         const val KAROO_EXTENSION_ACTION = "io.hammerhead.karooext.KAROO_EXTENSION"
+        const val SETTLE_MS = 1_000L
     }
 
     /** Finds the headset and waits until the extension has a usable connection to it. */

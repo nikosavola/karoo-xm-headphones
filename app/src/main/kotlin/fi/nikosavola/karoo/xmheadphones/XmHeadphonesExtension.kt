@@ -29,12 +29,13 @@ import timber.log.Timber
  * carrying a scan around. A controller button assigned to the toggle action borrows the connection
  * for as long as it needs it.
  */
-class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, EXTENSION_VERSION) {
+class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
     private lateinit var karooSystem: KarooSystemService
     private lateinit var client: XmHeadphonesClient
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    @Volatile private var holdsClient = false
+    /** Guarded by [setHoldingClient] and [releaseClient]: a profile event and teardown can race. */
+    private var holdsClient = false
 
     override val types by lazy {
         listOf(
@@ -95,6 +96,11 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, EXTENSION_VERSION) {
                 }
             }
         Timber.i("Active profile \"${profile.name}\" shows a headphone field: $wanted")
+        setHoldingClient(wanted)
+    }
+
+    @Synchronized
+    private fun setHoldingClient(wanted: Boolean) {
         if (wanted == holdsClient) return
         if (wanted) client.start() else client.stop()
         holdsClient = wanted
@@ -138,10 +144,7 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, EXTENSION_VERSION) {
     override fun onDestroy() {
         Timber.i("Extension service destroyed")
         scope.cancel()
-        synchronized(this) {
-            if (holdsClient) client.stop()
-            holdsClient = false
-        }
+        releaseClient()
         karooSystem.dispatch(ReleaseBluetooth(extension))
         karooSystem.disconnect()
         super.onDestroy()
@@ -154,7 +157,7 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, EXTENSION_VERSION) {
      * even been asked for, so treating it as an answer would make the first press of the button do
      * nothing at all while later ones worked.
      */
-    private fun HeadphonesLink.isSettled(): Boolean =
+    internal fun HeadphonesLink.isSettled(): Boolean =
         when (this) {
             HeadphonesLink.Connected,
             HeadphonesLink.NoPermission,
@@ -164,11 +167,15 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, EXTENSION_VERSION) {
             HeadphonesLink.Connecting -> false
         }
 
+    @Synchronized
+    private fun releaseClient() {
+        if (holdsClient) client.stop()
+        holdsClient = false
+    }
+
     companion object {
         /** Must match `id` in res/xml/extension_info.xml. */
         const val EXTENSION_ID = "xm-headphones"
-
-        const val EXTENSION_VERSION = "0.1.0"
 
         /** Must match `actionId` in res/xml/extension_info.xml. */
         const val ACTION_TOGGLE_NOISE_CANCELLING = "toggle-noise-cancelling"
@@ -176,3 +183,20 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, EXTENSION_VERSION) {
         private const val BORROW_TIMEOUT_MS = 10_000L
     }
 }
+
+/**
+ * Whether a link is one a borrow can act on.
+ *
+ * [HeadphonesLink.Idle] is not: it is what the state says before a connection has even been asked
+ * for, and the action reads it immediately after asking, so treating it as an answer would end the
+ * first press of the button at once while later presses worked.
+ */
+internal fun HeadphonesLink.isSettled(): Boolean =
+    when (this) {
+        HeadphonesLink.Connected,
+        HeadphonesLink.NoPermission,
+        HeadphonesLink.BluetoothOff -> true
+        HeadphonesLink.Idle,
+        HeadphonesLink.Searching,
+        HeadphonesLink.Connecting -> false
+    }

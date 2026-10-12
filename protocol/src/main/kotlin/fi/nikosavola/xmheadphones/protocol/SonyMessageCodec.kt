@@ -62,8 +62,9 @@ public object SonyMessageCodec {
      * rather than guessed at.
      */
     private fun protocolInfo(payload: ByteArray): SonyResponse.ProtocolInfo? =
-        when {
-            payload.size >= 8 ->
+        when (payload.size) {
+            // Four byte version and one flag per command table.
+            8 ->
                 SonyResponse.ProtocolInfo(
                     version = ProtocolVersion.V2,
                     tables =
@@ -72,8 +73,9 @@ public object SonyMessageCodec {
                             if (payload[7].toInt() and 0xFF == ENABLED) add(ProtocolTable.Table2)
                         },
                 )
-            payload.size >= 4 ->
-                SonyResponse.ProtocolInfo(ProtocolVersion.V1, setOf(ProtocolTable.Table1))
+            4 -> SonyResponse.ProtocolInfo(ProtocolVersion.V1, setOf(ProtocolTable.Table1))
+            // Refused rather than guessed at: a reply of any other length is not either generation's
+            // answer, and settling the version wrongly decides every command that follows.
             else -> null
         }
 
@@ -97,12 +99,15 @@ public object SonyMessageCodec {
     private fun supportedFunctions(payload: ByteArray): SonyResponse.SupportedFunctions? {
         if (payload.size < 3) return null
         val count = payload[2].toInt() and 0xFF
-        return when {
-            payload.size >= 3 + count * 2 ->
+        // Exact lengths, not at least: a reply that lost a byte would otherwise pass the shorter form
+        // and have the function ids read out of the following priority bytes, which invents a
+        // capability list and enables features the device never advertised.
+        return when (payload.size) {
+            3 + count * 2 ->
                 SonyResponse.SupportedFunctions(
                     (0 until count).map { payload[3 + it * 2].toInt() and 0xFF }.toSet(),
                 )
-            payload.size >= 3 + count ->
+            3 + count ->
                 SonyResponse.SupportedFunctions(
                     (0 until count).map { payload[3 + it].toInt() and 0xFF }.toSet(),
                 )
