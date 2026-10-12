@@ -1,0 +1,55 @@
+[versions]
+agp = "9.4.1"
+kotlin = "2.4.20"
+
+karooExt = "1.1.9"
+karooExtTesting = "0.1.0"
+
+coroutines = "1.10.2"
+serialization = "1.11.0"
+timber = "5.0.1"
+
+androidxCore = "1.19.1"
+androidxActivity = "1.13.0"
+androidxComposeUi = "1.12.1"
+androidxComposeMaterial = "1.4.0"
+androidxDatastore = "1.2.1"
+androidxLifecycle = "2.11.0"
+
+junit = "4.13.2"
+robolectric = "4.17"
+androidxTestCore = "1.7.0"
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+
+[libraries]
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+timber = { module = "com.jakewharton.timber:timber", version.ref = "timber" }
+
+hammerhead-karoo-ext = { module = "com.github.hammerheadnav:karoo-ext", version.ref = "karooExt" }
+karoo-ext-testing = { module = "com.github.nikosavola.karoo-ext-testing:karoo-ext-testing", version.ref = "karooExtTesting" }
+karoo-ext-testing-robolectric = { module = "com.github.nikosavola.karoo-ext-testing:karoo-ext-testing-robolectric", version.ref = "karooExtTesting" }
+
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidxActivity" }
+androidx-compose-ui = { module = "androidx.compose.ui:ui", version.ref = "androidxComposeUi" }
+androidx-compose-material = { module = "androidx.compose.material3:material3", version.ref = "androidxComposeMaterial" }
+androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview", version.ref = "androidxComposeUi" }
+androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "androidxDatastore" }
+androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidxLifecycle" }
+
+junit = { module = "junit:junit", version.ref = "junit" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTestCore" }
+
+[bundles]
+compose = ["androidx-compose-ui", "androidx-compose-material", "androidx-compose-ui-tooling-preview"]
