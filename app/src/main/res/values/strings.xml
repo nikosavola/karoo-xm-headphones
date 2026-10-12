@@ -20,6 +20,7 @@
     <string name="nc_ambient">Ambient sound</string>
     <string name="nc_ambient_voice">Ambient sound, voice</string>
     <string name="state_searching">Searching…</string>
+    <string name="state_unsupported">Not supported</string>
 
     <!-- Alerts -->
     <string name="alert_disconnected_title">Headset disconnected</string>
@@ -29,7 +30,21 @@
     <string name="settings_title">XM Headphones</string>
     <string name="settings_connection">Connection</string>
     <string name="settings_noise_cancelling">Noise cancelling</string>
-    <string name="settings_ambient_level">Ambient level</string>
+    <string name="settings_ambient_level">Ambient level: %1$d</string>
+    <string name="settings_mode_off">Off</string>
+    <string name="settings_mode_cancelling">Noise cancelling</string>
+    <string name="settings_mode_ambient">Ambient</string>
+    <string name="settings_noise_cancelling_unsupported">This headset does not offer noise cancelling.</string>
+    <string name="settings_equalizer_unsupported">This headset does not offer equalizer presets.</string>
+    <string name="settings_unknown">Unknown</string>
+    <string name="settings_connecting">Connecting…</string>
+    <string name="settings_idle">Not connected</string>
+    <string name="settings_no_permission">Bluetooth permission is needed to find the headset.</string>
+    <string name="settings_bluetooth_off">Bluetooth is off.</string>
+    <string name="settings_grant_permission">Grant permission</string>
+    <string name="settings_battery">Headset battery: %1$d%%</string>
+    <string name="settings_forget_help">Forget the headset to pair a different one next time.</string>
+    <string name="settings_forgotten">Forgotten. A different headset will be used next time.</string>
     <string name="settings_speak_to_chat">Speak-to-chat</string>
     <string name="settings_equalizer">Equalizer</string>
     <string name="settings_device">Device</string>
