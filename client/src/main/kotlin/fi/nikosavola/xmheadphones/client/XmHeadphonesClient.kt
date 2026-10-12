@@ -311,11 +311,18 @@ public class XmHeadphonesClient private constructor(private val context: Context
         private const val STOP_LINGER_MS = 120_000L
         private const val SCAN_RESTART_MS = 10 * 60_000L
 
+        // The permission names are compile-time String constants, so naming them below API 31 costs
+        // nothing at runtime; lint sees the fields they come from and cannot tell.
+        @SuppressLint("InlinedApi")
         private val PERMISSIONS_S =
             arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
         private val PERMISSIONS_LEGACY = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
 
-        @Volatile private var instance: XmHeadphonesClient? = null
+        // The application context, not an activity's: this is the process-wide client, and its
+        // lifetime is the process's by design.
+        @SuppressLint("StaticFieldLeak")
+        @Volatile
+        private var instance: XmHeadphonesClient? = null
 
         /** One client per process, shared by whatever needs the headset. */
         public fun get(context: Context): XmHeadphonesClient =

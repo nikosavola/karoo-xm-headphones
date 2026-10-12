@@ -4,6 +4,7 @@ import android.app.Application
 import timber.log.Timber
 import java.util.concurrent.CopyOnWriteArrayList
 import androidx.test.core.app.ApplicationProvider
+import fi.nikosavola.karooext.testing.AwaitTimeoutException
 import fi.nikosavola.karooext.testing.awaitValue
 import fi.nikosavola.karooext.testing.robolectric.RobolectricPump
 import fi.nikosavola.karooext.testing.robolectric.ble.FakeBle
@@ -279,26 +280,19 @@ class XmHeadphonesClientTest {
         connect()
 
         headset.disconnect()
-        awaitValue(timeoutMs = 10_000, idle = RobolectricPump::pumpMainLooper) {
-            client.state.value.link.takeIf { it == HeadphonesLink.Searching }
-        }
+        await { client.state.value.link.takeIf { it == HeadphonesLink.Searching } }
 
         headset.peripheral.advertise(untilMatched = true)
         headset.peripheral.connect()
-        val deadline = System.currentTimeMillis() + 10_000
-        var reconnected: XmHeadphonesState? = null
-        while (System.currentTimeMillis() < deadline && reconnected == null) {
-            RobolectricPump.pumpMainLooper()
-            reconnected =
+        val reconnected =
+            await(describe = {
+                "no reconnect after ${headset.peripheral.connectionAttempts} attempts: " +
+                    "state=${client.state.value}"
+            }) {
                 client.state.value.takeIf {
                     it.link == HeadphonesLink.Connected && it.battery != null
                 }
-            Thread.sleep(10)
-        }
-        checkNotNull(reconnected) {
-            "no reconnect after ${headset.peripheral.connectionAttempts} attempts: " +
-                "state=${client.state.value}"
-        }
+            }
 
         assertEquals(80, reconnected.batteryPercent)
     }
@@ -336,48 +330,45 @@ class XmHeadphonesClientTest {
         val peripheral = checkNotNull(this.peripheral)
         peripheral.advertise()
         peripheral.connect()
-        awaitSubscribed(peripheral)
-        return awaitConnected(peripheral)
+        await(describe = { "never subscribed: state=${client.state.value}, ${peripheral.describe()}" }) {
+            true.takeIf { SonyGatt.NOTIFY in peripheral.subscribedCharacteristics }
+        }
+        return await(describe = {
+            "never handshook: state=${client.state.value}\n" +
+                "commands=${headset.commands()}\n" +
+                "logs=" + logs.takeLast(20).joinToString(" | ")
+        }) {
+            client.state.value.takeIf { it.link == HeadphonesLink.Connected && it.battery != null }
+        }
     }
 
     /**
-     * Runs a suspend command off the test thread and waits for it with the looper pumping, since the
-     * acknowledgement it is waiting for arrives through the main looper.
+     * Runs a suspend command off the test thread and waits for it, since the acknowledgement it is
+     * waiting for only arrives while the main looper is being pumped, which this thread cannot do
+     * while it is blocked.
      */
-    /** Waits for the subscription, reporting what the client was doing if it never gets there. */
-    private fun awaitSubscribed(peripheral: FakeBlePeripheral) {
-        val deadline = System.currentTimeMillis() + 10_000
-        while (System.currentTimeMillis() < deadline) {
-            RobolectricPump.pumpMainLooper()
-            if (SonyGatt.NOTIFY in peripheral.subscribedCharacteristics) return
-            Thread.sleep(10)
-        }
-        error("never subscribed: state=${client.state.value}, ${peripheral.describe()}")
-    }
-
-    private fun awaitConnected(peripheral: FakeBlePeripheral): XmHeadphonesState {
-        val deadline = System.currentTimeMillis() + 10_000
-        while (System.currentTimeMillis() < deadline) {
-            RobolectricPump.pumpMainLooper()
-            val state = client.state.value
-            if (state.link == HeadphonesLink.Connected && state.battery != null) return state
-            Thread.sleep(10)
-        }
-        error(
-            "never handshook: state=${client.state.value}\n" +
-                "commands=${headset.commands()}\n" +
-                "logs=" + logs.takeLast(20).joinToString(" | "),
-        )
-    }
-
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private fun <T : Any> command(body: suspend () -> T): T {
         val pending = CoroutineScope(Dispatchers.Default).async { body() }
         return await { pending.takeIf { it.isCompleted }?.getCompleted() }
     }
 
-    private fun <T : Any> await(probe: () -> T?): T =
-        awaitValue(timeoutMs = 10_000, idle = RobolectricPump::pumpMainLooper, probe = probe)
+    /**
+     * Waits for [probe] with the main looper pumping.
+     *
+     * A bare timeout says only that something never happened, which is the least useful thing to know
+     * about a client talking to a simulated headset, so [describe] reports what it was doing instead.
+     */
+    private fun <T : Any> await(
+        timeoutMs: Long = 10_000,
+        describe: () -> String = { "timed out waiting for the client state" },
+        probe: () -> T?,
+    ): T =
+        try {
+            awaitValue(timeoutMs, RobolectricPump::pumpMainLooper, probe)
+        } catch (timeout: AwaitTimeoutException) {
+            throw AssertionError(describe(), timeout)
+        }
 
     private fun hex(text: String): ByteArray =
         ByteArray(text.length / 2) { text.substring(it * 2, it * 2 + 2).toInt(16).toByte() }

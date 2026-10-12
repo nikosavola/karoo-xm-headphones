@@ -21,4 +21,6 @@ jobs:
           java-version: '17'
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew test :app:assembleDebug
+      # `check` and not just `test`: the library modules' lint gate is part of it, and a lint
+      # failure there has no other way of showing up (the app still builds and the tests still pass).
+      - run: ./gradlew check :app:assembleDebug

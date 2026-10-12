@@ -262,6 +262,7 @@ internal class SonySession(
         }
     }
 
+    @SuppressLint("MissingPermission") // the caller checks the permission before connecting
     override fun close() {
         closed = true
         scope.cancel()
