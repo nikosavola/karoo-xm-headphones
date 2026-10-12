@@ -228,6 +228,9 @@ public class XmHeadphonesClient private constructor(private val context: Context
                         lastAmbientLevel =
                             (response.state as? NoiseCancelling.Ambient)?.level
                                 ?: current.lastAmbientLevel,
+                        lastFocusOnVoice =
+                            (response.state as? NoiseCancelling.Ambient)?.focusOnVoice
+                                ?: current.lastFocusOnVoice,
                     )
                 is SonyResponse.Equalizer -> current.copy(equalizerPreset = response.preset)
                 is SonyResponse.Acknowledged,

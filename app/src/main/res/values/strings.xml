@@ -37,6 +37,8 @@
     <string name="settings_mode_cancelling">Noise cancelling</string>
     <string name="settings_mode_ambient">Ambient</string>
     <string name="settings_noise_cancelling_unsupported">This headset does not offer noise cancelling.</string>
+    <string name="settings_waiting_for_headset">Waiting for a headset.</string>
+    <string name="settings_noise_report_pending">Waiting for the headset to report its mode.</string>
     <string name="settings_equalizer_unsupported">This headset does not offer equalizer presets.</string>
     <string name="settings_unknown">Unknown</string>
     <string name="settings_connecting">Connecting…</string>

@@ -24,3 +24,13 @@ jobs:
       # `check` and not just `test`: the library modules' lint gate is part of it, and a lint
       # failure there has no other way of showing up (the app still builds and the tests still pass).
       - run: ./gradlew check :app:assembleDebug
+      # The screenshot tests rewrite the README's images, so a runner that rasterizes differently
+      # leaves them modified. Reported rather than failed on: the images were recorded on macOS and
+      # this runner's rendering has never been compared with it, so a red build here would be about
+      # the difference between two rasterizers rather than about anything wrong with the code.
+      - name: Report screenshot drift
+        run: |
+          if ! git diff --quiet -- docs/screenshots; then
+            echo "::warning::docs/screenshots was rewritten by the tests; the committed images were recorded elsewhere"
+            git --no-pager diff --stat -- docs/screenshots
+          fi

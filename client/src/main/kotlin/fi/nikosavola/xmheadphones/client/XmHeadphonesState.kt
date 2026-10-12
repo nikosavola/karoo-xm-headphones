@@ -46,6 +46,13 @@ public data class XmHeadphonesState(
      * nothing rather than from where the rider left it.
      */
     public val lastAmbientLevel: AmbientLevel? = null,
+    /**
+     * The focus-on-voice the rider last had, kept across a spell of noise cancelling or off.
+     *
+     * Only ambient mode carries it, so without this switching to noise cancelling and back would
+     * clear a setting the rider never touched.
+     */
+    public val lastFocusOnVoice: Boolean? = null,
     /** The last thing that went wrong, kept for a settings screen rather than logged and lost. */
     public val lastError: String? = null,
 ) {

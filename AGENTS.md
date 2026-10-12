@@ -52,6 +52,23 @@ The harness is pinned to 0.1.0 because JitPack's build of 0.1.1 fails. On that v
 notification callback is the one that carries the value, so the client overrides both variants; a
 newer harness would not change that, since Karoo 2 is API 26.
 
+The README's screenshots are recorded by `ControlScreenScreenshotTest`, which writes lossless WebP
+into `docs/screenshots/`. Running `./gradlew :app:testDebugUnitTest --tests '*ControlScreenScreenshotTest'`
+regenerates them, and every `./gradlew test` rewrites them too, so they cannot go stale on the
+machine that recorded them. That is also the hazard: on a host whose rasterization differs, a test
+run leaves six tracked files modified. CI reports that rather than failing on it.
+
+Assert text alone is not enough to call an image right: the first version of that test published a
+screen whose chip labels had been squeezed to one letter per line, which no text assertion can see.
+Each state's test now also checks that the slider and the switch exist, which chip is selected, and
+that no chip's label wrapped (a chip squeezed narrow grows several times taller than the 32dp one
+line needs). Assert geometry, not just presence.
+
+The render is the Karoo 3's own 480x800 at 280 dpi, set by `@Config(qualifiers = ...)`, on API 33
+because that is the Karoo 3's platform. Capturing more than a viewport tall does not work here:
+Robolectric paints only a window-sized band, so the lower half of the screen is a separate scrolled
+capture. `@GraphicsMode(NATIVE)` is what makes the rendering work at all.
+
 Tests that render a custom view need `@Config(instrumentedPackages = ["io.hammerhead.karooext.internal"])`
 and `RobolectricPump.advanceBy` between frames: the view emitter drops an update that lands within
 900 ms of the last one.

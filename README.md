@@ -18,6 +18,31 @@ On a ride page:
 In the app screen: the three noise control modes, the ambient level, focus-on-voice, the equalizer
 preset, the headset's model and firmware, and forgetting the headset so a different one is picked up.
 
+## Screenshots
+
+| Ambient sound | The same screen, scrolled | Noise cancelling | Searching | No noise control | Waiting for permission |
+| ------------- | ------------------------- | ---------------- | --------- | ---------------- | ---------------------- |
+| <img src="docs/screenshots/control-ambient.webp" width="140" alt="Ambient mode with the level slider and focus on voice"> | <img src="docs/screenshots/control-ambient-lower.webp" width="140" alt="Equalizer presets and forgetting the headset"> | <img src="docs/screenshots/control-cancelling.webp" width="140" alt="Noise cancelling selected"> | <img src="docs/screenshots/control-searching.webp" width="140" alt="Looking for a headset"> | <img src="docs/screenshots/control-unsupported.webp" width="140" alt="A headset that offers neither noise control nor equalizer presets"> | <img src="docs/screenshots/control-permission.webp" width="140" alt="Asking for the Bluetooth permission"> |
+
+These are the real composables, drawn at the Karoo 3's 480x800 with values such a headset would
+report, not drawings of the screen. The states are set directly because no headset was available to
+reach them.
+
+Each test checks the screen before it captures it: the texts it has to show, and, in the states
+that have them, that the level slider and the focus switch are there at all, which mode chip reads
+as selected, and that no chip has been squeezed narrow enough to wrap its label. The first version
+of this file asserted only that the texts were present, and published a screen whose chips had been
+crushed to one letter per line.
+
+The screen's content is about 695dp against the Karoo 3's 457dp of viewport, so it scrolls; the
+second image is that same state scrolled to the bottom. The ride-page fields are not pictured:
+Karoo draws those itself from the text and numbers the extension streams, and every image here is
+of the settings screen. Regenerate them by running the tests:
+
+```sh
+./gradlew :app:testDebugUnitTest --tests '*ControlScreenScreenshotTest'
+```
+
 ## Modules
 
 | Module     | Type             | What it is                                                                                     |
@@ -78,6 +103,12 @@ Checked against hardware, via the packet captures committed to
 - the V1 handshake replies and the V1 noise-control and battery reports decode to the states that
   headset was actually in.
 
+The APK has been installed and launched on an API 31 emulator configured as a Karoo 3, 480x800 at
+280 dpi, which is the size the screenshots above use. It starts, asks for the Bluetooth permission it
+needs, reads the adapter state, and with the adapter up it scans and settles on Searching. No headset
+has been near it, and an emulator is not a Karoo: that run says the app installs and runs, nothing
+about the protocol.
+
 Not checked:
 
 - **Everything in the write direction.** The set frames are built from the payload definitions in
@@ -100,8 +131,8 @@ Not checked:
   SongPal app by two independent projects, but only the two services this client uses are tried.
 
 The code fails closed at every point where this matters: a headset that does not answer is reported as
-such rather than guessed at, and a reply that does not fit its shape is logged and acknowledged rather
-than acted on.
+such rather than guessed at, and a reply that does not fit its shape is logged in debug builds (which
+plant a Timber tree) and acknowledged rather than acted on.
 
 ## Credits
 
