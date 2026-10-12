@@ -1,0 +1,5 @@
+jdk:
+  - openjdk17
+# JitPack runs `install`; publish the two library modules so both coordinates resolve.
+install:
+  - ./gradlew :protocol:publishToMavenLocal :client:publishToMavenLocal -x test
