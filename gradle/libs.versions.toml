@@ -3,7 +3,7 @@ agp = "9.4.1"
 kotlin = "2.4.20"
 
 karooExt = "1.1.9"
-karooExtTesting = "0.1.0"
+karooExtTesting = "0.1.1"
 
 coroutines = "1.10.2"
 serialization = "1.11.0"
@@ -15,6 +15,7 @@ androidxComposeUi = "1.12.1"
 androidxComposeMaterial = "1.4.0"
 androidxDatastore = "1.2.1"
 androidxLifecycle = "2.11.0"
+glance = "1.2.0"
 
 junit = "4.13.2"
 robolectric = "4.17"
@@ -46,6 +47,7 @@ androidx-compose-material = { module = "androidx.compose.material3:material3", v
 androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview", version.ref = "androidxComposeUi" }
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "androidxDatastore" }
 androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidxLifecycle" }
+androidx-glance-appwidget = { module = "androidx.glance:glance-appwidget", version.ref = "glance" }
 
 junit = { module = "junit:junit", version.ref = "junit" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }

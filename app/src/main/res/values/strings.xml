@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">XM Headphones</string>
+    <string name="extension_name">XM Headphones</string>
+
+    <!-- Data types -->
+    <string name="battery">Headset Battery</string>
+    <string name="battery_description">Battery level of the connected Sony headset</string>
+    <string name="noise_cancelling">Noise Cancelling</string>
+    <string name="noise_cancelling_description">Current noise cancelling mode of the Sony headset</string>
+    <string name="ambient_level">Ambient Level</string>
+    <string name="ambient_level_description">Ambient sound level of the Sony headset</string>
+
+    <!-- Bonus actions -->
+    <string name="action_toggle_noise_cancelling">Toggle noise cancelling</string>
+
+    <!-- Ridden states -->
+    <string name="nc_off">Off</string>
+    <string name="nc_noise_cancelling">Noise cancelling</string>
+    <string name="nc_ambient">Ambient sound</string>
+    <string name="nc_ambient_voice">Ambient sound, voice</string>
+    <string name="state_searching">Searching…</string>
+
+    <!-- Alerts -->
+    <string name="alert_disconnected_title">Headset disconnected</string>
+    <string name="alert_disconnected_detail">Sony headphones are no longer connected</string>
+
+    <!-- Settings screen -->
+    <string name="settings_title">XM Headphones</string>
+    <string name="settings_connection">Connection</string>
+    <string name="settings_noise_cancelling">Noise cancelling</string>
+    <string name="settings_ambient_level">Ambient level</string>
+    <string name="settings_speak_to_chat">Speak-to-chat</string>
+    <string name="settings_equalizer">Equalizer</string>
+    <string name="settings_device">Device</string>
+    <string name="settings_autoconnect">Connect automatically</string>
+    <string name="settings_forget">Forget headset</string>
+</resources>

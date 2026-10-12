@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ExtensionInfo
+    displayName="@string/extension_name"
+    icon="@drawable/ic_headphones"
+    id="xm-headphones">
+    <DataType
+        description="@string/battery_description"
+        displayName="@string/battery"
+        graphical="false"
+        icon="@drawable/ic_headphones"
+        typeId="battery" />
+    <DataType
+        description="@string/noise_cancelling_description"
+        displayName="@string/noise_cancelling"
+        graphical="true"
+        icon="@drawable/ic_headphones"
+        typeId="noise-cancelling" />
+    <DataType
+        description="@string/ambient_level_description"
+        displayName="@string/ambient_level"
+        graphical="false"
+        icon="@drawable/ic_headphones"
+        typeId="ambient-level" />
+
+    <BonusAction
+        actionId="toggle-noise-cancelling"
+        displayName="@string/action_toggle_noise_cancelling" />
+</ExtensionInfo>

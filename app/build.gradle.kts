@@ -42,6 +42,7 @@ dependencies {
   implementation(libs.bundles.compose)
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.datastore.preferences)
+  implementation(libs.androidx.glance.appwidget)
   implementation(libs.kotlinx.serialization.json)
   implementation(libs.timber)
 
