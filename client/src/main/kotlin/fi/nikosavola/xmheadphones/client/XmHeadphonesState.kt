@@ -1,5 +1,6 @@
 package fi.nikosavola.xmheadphones.client
 
+import fi.nikosavola.xmheadphones.protocol.AmbientLevel
 import fi.nikosavola.xmheadphones.protocol.BatteryReading
 import fi.nikosavola.xmheadphones.protocol.EqualizerPreset
 import fi.nikosavola.xmheadphones.protocol.NoiseCancelling
@@ -38,6 +39,13 @@ public data class XmHeadphonesState(
     public val battery: BatteryReading? = null,
     public val noiseCancelling: NoiseCancelling? = null,
     public val equalizerPreset: EqualizerPreset? = null,
+    /**
+     * The ambient level the rider last had, kept across a spell of noise cancelling or off.
+     *
+     * Neither state carries a level, so without this a slider or a mode change would start from
+     * nothing rather than from where the rider left it.
+     */
+    public val lastAmbientLevel: AmbientLevel? = null,
     /** The last thing that went wrong, kept for a settings screen rather than logged and lost. */
     public val lastError: String? = null,
 ) {

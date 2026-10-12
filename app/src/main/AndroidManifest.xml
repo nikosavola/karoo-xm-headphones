@@ -40,7 +40,7 @@
         </activity>
 
         <service
-            android:name=".extension.XmHeadphonesExtension"
+            android:name=".XmHeadphonesExtension"
             android:exported="true"
             tools:ignore="ExportedService">
             <!-- Required for this extension to be discovered by the Karoo System -->

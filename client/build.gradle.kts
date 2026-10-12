@@ -3,9 +3,11 @@
 // the GATT session.
 plugins {
   alias(libs.plugins.android.library)
-  alias(libs.plugins.kotlin.serialization)
   `maven-publish`
 }
+
+group = "fi.nikosavola.xmheadphones"
+version = System.getenv("RELEASE_VERSION")?.removePrefix("v") ?: "0.1.0-SNAPSHOT"
 
 android {
   namespace = "fi.nikosavola.xmheadphones.client"
@@ -18,7 +20,6 @@ android {
 dependencies {
   api(project(":protocol"))
   api(libs.kotlinx.coroutines.android)
-  implementation(libs.kotlinx.serialization.json)
   implementation(libs.timber)
 
   testImplementation(libs.junit)

@@ -9,6 +9,7 @@ import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.os.Build
+import fi.nikosavola.xmheadphones.protocol.AmbientLevel
 import fi.nikosavola.xmheadphones.protocol.BatteryReading
 import fi.nikosavola.xmheadphones.protocol.DeviceInfoQuestion
 import fi.nikosavola.xmheadphones.protocol.MdrDataType
@@ -16,6 +17,7 @@ import fi.nikosavola.xmheadphones.protocol.MdrFrame
 import fi.nikosavola.xmheadphones.protocol.MdrFrameCodec
 import fi.nikosavola.xmheadphones.protocol.NoiseAdaptiveFields
 import fi.nikosavola.xmheadphones.protocol.NoiseCancelling
+import fi.nikosavola.xmheadphones.protocol.ProtocolTable
 import fi.nikosavola.xmheadphones.protocol.SonyCapabilities
 import fi.nikosavola.xmheadphones.protocol.SonyHandshakeRequest
 import fi.nikosavola.xmheadphones.protocol.SonyMessageCodec
@@ -98,11 +100,37 @@ internal class SonySession(
     @Volatile private var closed = false
     @Volatile private var adaptive: NoiseAdaptiveFields = NoiseAdaptiveFields.Default
 
+    /**
+     * The ambient level the headset last reported, so switching noise cancelling off does not tell it
+     * to forget the level while it is off.
+     */
+    @Volatile private var ambientLevel: AmbientLevel = AmbientLevel.Silent
+
     /** The sequence the next frame we send carries; the protocol has a two value sequence space. */
     private var dataSequence = 0
-    private var writableBytes = DEFAULT_WRITABLE_BYTES
 
-    private class ResponseWaiter(val matches: (SonyResponse) -> Boolean) {
+    /** What the headset says it accepts in one write; null until it has said. */
+    @Volatile private var deviceWritableBytes: Int? = null
+
+    /**
+     * What the link carries in one write, which is the ATT payload of the negotiated MTU until the
+     * MTU is negotiated. A headset's own answer cannot be trusted on its own: it may name more than
+     * the link will carry, and a write longer than the MTU is rejected by the stack without an error
+     * this client could see.
+     */
+    @Volatile private var linkWriteBytes: Int = DEFAULT_WRITABLE_BYTES
+
+    /**
+     * A response the session is waiting for.
+     *
+     * [expectedReplyCommand] is the command byte the headset answers with, which is the request's own
+     * command plus one for every GET in this protocol. Matching on the response type alone would let a
+     * device-initiated notification satisfy a pending request, and those decode to the same type.
+     */
+    private class ResponseWaiter(
+        val expectedReplyCommand: Byte,
+        val matches: (SonyResponse) -> Boolean,
+    ) {
         val channel = Channel<SonyResponse>(capacity = 1)
     }
 
@@ -174,9 +202,15 @@ internal class SonySession(
                 if (characteristic.uuid != SonyGatt.WRITABLE_VALUE_LENGTH) return
                 val value = characteristic.value ?: return
                 readWritableLength(value)?.let { length ->
-                    writableBytes = length
+                    deviceWritableBytes = length
                     Timber.i("Headset accepts $length byte writes")
                 }
+            }
+
+            override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
+                if (status != BluetoothGatt.GATT_SUCCESS) return
+                linkWriteBytes = (mtu - ATT_HEADER_BYTES).coerceAtLeast(DEFAULT_WRITABLE_BYTES)
+                Timber.i("MTU $mtu, so $linkWriteBytes byte writes")
             }
         }
 
@@ -213,6 +247,7 @@ internal class SonySession(
                     ?: throw IOException("no notify characteristic")
 
             subscribe()
+            negotiateMtu()
             requestWritableLength()
 
             scope.launch { processIncoming() }
@@ -259,7 +294,7 @@ internal class SonySession(
     }
 
     suspend fun setNoiseCancelling(state: NoiseCancelling): Boolean =
-        send(SonyRequest.SetNoiseControl(state, adaptive))
+        send(SonyRequest.SetNoiseControl(state, adaptive, ambientLevel))
 
     /** Null when the headset does not offer noise control, or never answered. */
     suspend fun readNoiseCancelling(): SonyResponse.NoiseControl? =
@@ -281,6 +316,14 @@ internal class SonySession(
             handshake(SonyHandshakeRequest.ProtocolInfo) { it as? SonyResponse.ProtocolInfo }
                 ?: throw IOException("the headset never reported its protocol version")
         Timber.i("Protocol ${protocolInfo.version}, tables ${protocolInfo.tables}")
+        if (protocolInfo.tables.isNotEmpty() && ProtocolTable.Table1 !in protocolInfo.tables) {
+            // Every command this client sends travels on table 1, so a device with it switched off
+            // would answer nothing and look like a headset that had gone quiet.
+            throw IOException(
+                "the headset reports protocol ${protocolInfo.version} with table 1 disabled; " +
+                    "the commands this client sends all live there",
+            )
+        }
 
         val functions =
             handshake(SonyHandshakeRequest.SupportedFunctions) {
@@ -327,7 +370,7 @@ internal class SonySession(
     private suspend fun processIncoming() {
         try {
             for (frame in incoming) {
-            val response = SonyMessageCodec.decode(frame)
+            val response = SonyMessageCodec.decode(frame, _capabilities.value?.version)
             // Every data frame is acknowledged, the ones this client cannot read included: an
             // unacknowledged headset resends, which turns one unknown command into a loop.
             if (frame.type != MdrDataType.Ack) acknowledge(frame.sequence)
@@ -339,10 +382,14 @@ internal class SonySession(
                 }
                 is SonyResponse.Unrecognised -> Timber.d("Ignoring command ${response.command}")
                 else -> {
-                    waiters.firstOrNull { it.matches(response) }?.let { waiter ->
-                        waiters.remove(waiter)
-                        waiter.channel.trySend(response)
-                    }
+                    rememberAmbientLevel(response)
+                    val command = frame.payload.firstOrNull() ?: 0
+                    waiters
+                        .firstOrNull { it.matches(response) && it.expectedReplyCommand == command }
+                        ?.let { waiter ->
+                            waiters.remove(waiter)
+                            waiter.channel.trySend(response)
+                        }
                     _responses.tryEmit(response)
                 }
                 }
@@ -350,6 +397,11 @@ internal class SonySession(
         } finally {
             finished.complete(Unit)
         }
+    }
+
+    private fun rememberAmbientLevel(response: SonyResponse) {
+        val ambient = (response as? SonyResponse.NoiseControl)?.state as? NoiseCancelling.Ambient
+        if (ambient != null) ambientLevel = ambient.level
     }
 
     private suspend fun acknowledge(sequence: Int) {
@@ -395,7 +447,7 @@ internal class SonySession(
         timeoutMs: Long,
         matches: (SonyResponse) -> T?,
     ): T? {
-        val waiter = ResponseWaiter { matches(it) != null }
+        val waiter = ResponseWaiter(replyCommandFor(frame)) { matches(it) != null }
         waiters += waiter
         try {
             if (!writeAndAwaitAck(frame)) return null
@@ -427,6 +479,10 @@ internal class SonySession(
         return false
     }
 
+    /** The reply to a GET carries the next command byte up; the protocol uses that throughout. */
+    private fun replyCommandFor(frame: MdrFrame): Byte =
+        ((frame.payload.firstOrNull()?.toInt() ?: 0) + 1).toByte()
+
     private fun drainAcknowledgements() {
         // Anything still queued belongs to a frame that already timed out.
         while (acknowledgements.tryReceive().isSuccess) {
@@ -453,7 +509,7 @@ internal class SonySession(
     ): Boolean {
         // A frame longer than one write is split, and the headset reassembles it by scanning for the
         // markers. Every frame this client sends fits in a single write.
-        val chunks = bytes.asList().chunked(writableBytes)
+        val chunks = bytes.asList().chunked(minOf(deviceWritableBytes ?: MAX_WRITABLE_BYTES, linkWriteBytes))
         for (chunk in chunks) {
             characteristic.value = chunk.toByteArray()
             characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
@@ -490,6 +546,14 @@ internal class SonySession(
         if (!connection.writeDescriptor(cccd)) throw IOException("writeDescriptor refused")
     }
 
+    /** Best effort: a stack or a headset that refuses this keeps the default payload size. */
+    @SuppressLint("MissingPermission") // the caller checks the permission before connecting
+    private fun negotiateMtu() {
+        val connection = gatt ?: return
+        runCatching { connection.requestMtu(MTU_REQUEST) }
+            .onFailure { Timber.d("Could not ask for a larger MTU: ${it.message}") }
+    }
+
     @SuppressLint("MissingPermission") // the caller checks the permission before connecting
     private fun requestWritableLength() {
         // Best effort: the BLE default is used if the headset does not answer, and every frame this
@@ -517,6 +581,8 @@ internal class SonySession(
     private companion object {
         const val FRAME_QUEUE = 64
         const val RESPONSE_BUFFER = 64
+        const val MTU_REQUEST = 512
+        const val ATT_HEADER_BYTES = 3
         const val CONNECT_TIMEOUT_MS = 15_000L
         const val GATT_TIMEOUT_MS = 10_000L
         const val HANDSHAKE_TIMEOUT_MS = 5_000L

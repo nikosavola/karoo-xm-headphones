@@ -42,6 +42,7 @@ import fi.nikosavola.xmheadphones.client.XmHeadphonesState
 import fi.nikosavola.xmheadphones.protocol.AmbientLevel
 import fi.nikosavola.xmheadphones.protocol.EqualizerPreset
 import fi.nikosavola.xmheadphones.protocol.NoiseCancelling
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 
@@ -153,7 +154,7 @@ private fun Connection(state: XmHeadphonesState, onAskForPermissions: () -> Unit
 private fun NoiseControlSection(
     state: XmHeadphonesState,
     client: XmHeadphonesClient,
-    scope: kotlinx.coroutines.CoroutineScope,
+    scope: CoroutineScope,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
@@ -166,6 +167,12 @@ private fun NoiseControlSection(
         }
 
         val current = state.noiseCancelling
+        val ambient = current as? NoiseCancelling.Ambient
+        // The headset's own report is the truth, but a slider that waited for it would fight the
+        // thumb, so the level being dragged is held here and only sent when the rider lets go. One
+        // write per drag rather than one per pixel, and the value shown is always the one they chose.
+        var dragging by remember { mutableStateOf<Int?>(null) }
+
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ModeChip(
                 label = stringResource(R.string.settings_mode_off),
@@ -181,23 +188,36 @@ private fun NoiseControlSection(
             )
             ModeChip(
                 label = stringResource(R.string.settings_mode_ambient),
-                selected = current is NoiseCancelling.Ambient,
+                selected = ambient != null,
+                // Keeps whatever the rider set the level and the voice focus to.
                 onClick = {
-                    scope.launch { client.setNoiseCancelling(NoiseCancelling.Ambient(lastLevel(current), false)) }
+                    scope.launch {
+                        client.setNoiseCancelling(
+                            NoiseCancelling.Ambient(
+                                // Where the rider left it, which neither of the other two modes
+                                // carries.
+                                ambient?.level ?: state.lastAmbientLevel ?: DEFAULT_AMBIENT_LEVEL,
+                                ambient?.focusOnVoice ?: false,
+                            ),
+                        )
+                    }
                 },
             )
         }
 
-        val ambient = current as? NoiseCancelling.Ambient
         if (ambient != null) {
-            Text(stringResource(R.string.settings_ambient_level, ambient.level.steps))
+            val shown = dragging ?: ambient.level.steps
+            Text(stringResource(R.string.settings_ambient_level, shown))
             Slider(
-                value = ambient.level.steps.toFloat(),
-                onValueChange = { steps ->
+                value = shown.toFloat(),
+                onValueChange = { dragging = it.toInt() },
+                onValueChangeFinished = {
+                    val steps = dragging ?: ambient.level.steps
+                    dragging = null
                     scope.launch {
                         client.setNoiseCancelling(
                             NoiseCancelling.Ambient(
-                                AmbientLevel.fromStepsOrNull(steps.toInt()) ?: ambient.level,
+                                AmbientLevel.clamped(steps),
                                 ambient.focusOnVoice,
                             ),
                         )
@@ -208,7 +228,7 @@ private fun NoiseControlSection(
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    stringResource(R.string.settings_speak_to_chat),
+                    stringResource(R.string.settings_focus_on_voice),
                     modifier = Modifier.weight(1f),
                 )
                 Switch(
@@ -228,7 +248,7 @@ private fun NoiseControlSection(
 private fun EqualizerSection(
     state: XmHeadphonesState,
     client: XmHeadphonesClient,
-    scope: kotlinx.coroutines.CoroutineScope,
+    scope: CoroutineScope,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(stringResource(R.string.settings_equalizer), style = MaterialTheme.typography.titleMedium)
@@ -237,9 +257,9 @@ private fun EqualizerSection(
             return
         }
         Text(state.equalizerPreset?.label ?: stringResource(R.string.settings_unknown))
-        // The presets a device offers depend on the device, and the protocol has no question for
-        // "which ones do you have", so the list is the protocol's own and a preset a headset does not
-        // know is simply ignored by it.
+        // Twenty-one presets are modelled in the protocol and four are offered here. Which ones a
+        // device has cannot be asked for, and a headset ignores a preset it does not know, so the
+        // long tail would be a list of buttons that quietly do nothing on most headsets.
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(EqualizerPreset.Off, EqualizerPreset.Rock, EqualizerPreset.Pop, EqualizerPreset.Jazz)
                 .forEach { preset ->
@@ -279,6 +299,5 @@ private fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
     FilterChip(selected = selected, onClick = onClick, label = { Text(label) })
 }
 
-/** Keeps the level the rider set when they toggle ambient sound on and off. */
-private fun lastLevel(current: NoiseCancelling?): AmbientLevel =
-    (current as? NoiseCancelling.Ambient)?.level ?: AmbientLevel.fromStepsOrNull(10)!!
+/** Where the ambient slider starts when the headset has not reported a level yet. */
+private val DEFAULT_AMBIENT_LEVEL: AmbientLevel = AmbientLevel.clamped(10)

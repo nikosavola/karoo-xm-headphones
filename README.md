@@ -85,6 +85,13 @@ Not checked:
 - **The V2 layouts** (WH-1000XM5, WF-1000XM4/XM5, WH-CH720N and the rest). They come from the same
   generated headers, cross-checked against Mercury000/SonyPods, which read them out of the Sound
   Connect app.
+- **The places the two generations disagree**, which the generated headers do spell out and the tests
+  pin, but no device has confirmed: the equalizer lives in slot `0x01` on V1 and `0x00` on V2, where
+  V1's slot is V2's Clear Bass; V1 marks its noise cancelling slot separately while V2 carries the
+  ambient level through an off; a V2 device's advertised functions come back as a code and a
+  priority per function rather than a flat run of codes.
+- **Earbuds**, which report a level per bud and sometimes without a charging byte at all. Both forms
+  are parsed and the lower bud is what a ride screen shows, but no pair of earbuds has been tried.
 - **Whether V1 headsets answer on BLE at all.** On a desktop they are driven over the classic serial
   profile. Their BLE channel is the third service `SonyGatt` lists, and no reference implementation
   has confirmed that a V1 headset answers there. If the extension connects to an XM3 or XM4 but never

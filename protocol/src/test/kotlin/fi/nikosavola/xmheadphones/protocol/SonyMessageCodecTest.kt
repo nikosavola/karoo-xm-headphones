@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Every packet here was captured from a WH-1000XM3 on firmware 4.5.2 and is committed to
@@ -137,10 +138,81 @@ class SonyMessageCodecTest {
 
     @Test
     fun `an unmodelled command is reported rather than dropped`() {
-        // The equalizer EBB reply, which carries a curve this client does not show.
+        // The XM3's active-noise-optimizer notification, which has no counterpart here.
+        val frame =
+            MdrFrameCodec.encode(
+                MdrFrame(MdrDataType.DataMdr, 0, byteArrayOf(0x85.toByte(), 0x00, 0x00)),
+            )
+
+        assertEquals(SonyResponse.Unrecognised(0x85), decode(frame, ProtocolVersion.V1))
+    }
+
+    @Test
+    fun `the equalizer reply is read from the slot its generation uses`() {
+        // Captured from a WH-1000XM3: command, slot 0x01, preset off, six flat bands.
+        val xm3 = "3e0c010000000a570100060a0a0a0a0a0ab13c"
+
+        // On V1 that slot is the preset, and reading it as V2 would call it an unknown command.
+        assertEquals(SonyResponse.Equalizer(EqualizerPreset.Off), decode(xm3, ProtocolVersion.V1))
+        assertTrue(decode(xm3, ProtocolVersion.V2) is SonyResponse.Unrecognised)
+    }
+
+    @Test
+    fun `a V2 equalizer reply is read from V2's slot`() {
+        val frame =
+            MdrFrameCodec.encode(
+                MdrFrame(MdrDataType.DataMdr, 0, byteArrayOf(0x57, 0x00, 0x02, 0x00)),
+            )
+
         assertEquals(
-            SonyResponse.Unrecognised(0x57),
-            decode("3e0c010000000a570100060a0a0a0a0a0ab13c"),
+            SonyResponse.Equalizer(EqualizerPreset.Pop),
+            decode(frame, ProtocolVersion.V2),
+        )
+        // V2 keeps its preset in 0x00, so the same bytes mean nothing on V1.
+        assertTrue(decode(frame, ProtocolVersion.V1) is SonyResponse.Unrecognised)
+    }
+
+    @Test
+    fun `an equalizer reply cannot be read before the generation is known`() {
+        assertTrue(
+            decode("3e0c010000000a570100060a0a0a0a0a0ab13c") is SonyResponse.Unrecognised,
+        )
+    }
+
+    @Test
+    fun `the equalizer request asks the slot the headset's generation uses`() {
+        assertContentEquals(
+            byteArrayOf(0x56, 0x01),
+            SonyRequest.Equalizer.payload(v1),
+        )
+        assertContentEquals(
+            byteArrayOf(0x56, 0x00),
+            SonyRequest.Equalizer.payload(SonyCapabilities(ProtocolVersion.V2, setOf(0x50))),
+        )
+    }
+
+    @Test
+    fun `a preset write carries the slot and no bands`() {
+        // A device sent a preset and band steps in one frame drops both, so a preset change sends
+        // only the preset.
+        assertContentEquals(
+            byteArrayOf(0x58, 0x01, 0x02, 0x00),
+            SonyRequest.SetEqualizer(EqualizerPreset.Pop).payload(v1),
+        )
+    }
+
+    @Test
+    fun `earbuds reporting a level per bud with a placeholder between them are read`() {
+        val frame =
+            MdrFrameCodec.encode(
+                MdrFrame(MdrDataType.DataMdr, 0, byteArrayOf(0x23, 0x01, 0x50, 0x00, 0x64)),
+            )
+
+        assertEquals(
+            SonyResponse.Battery(
+                BatteryReading.LeftRight(BatteryStatus(80, false), BatteryStatus(100, false)),
+            ),
+            decode(frame, ProtocolVersion.V2),
         )
     }
 
@@ -211,15 +283,17 @@ class SonyMessageCodecTest {
         )
     }
 
-    private fun decode(bytes: ByteArray): SonyResponse =
+    private fun decode(bytes: ByteArray, version: ProtocolVersion? = null): SonyResponse =
         when (val result = MdrFrameCodec.decode(bytes)) {
-            is MdrDecodeResult.Decoded -> SonyMessageCodec.decode(result.frame)
+            is MdrDecodeResult.Decoded -> SonyMessageCodec.decode(result.frame, version)
             else -> error("the packet did not decode: $result")
         }
 
-    private fun decode(hex: String): SonyResponse = decode(hex(hex))
+    private fun decode(hex: String, version: ProtocolVersion? = null): SonyResponse =
+        decode(hex(hex), version)
 
-    private fun decode(frame: MdrFrame): SonyResponse = SonyMessageCodec.decode(frame)
+    private fun decode(frame: MdrFrame, version: ProtocolVersion? = null): SonyResponse =
+        SonyMessageCodec.decode(frame, version)
 
     private fun hex(text: String): ByteArray =
         ByteArray(text.length / 2) { text.substring(it * 2, it * 2 + 2).toInt(16).toByte() }

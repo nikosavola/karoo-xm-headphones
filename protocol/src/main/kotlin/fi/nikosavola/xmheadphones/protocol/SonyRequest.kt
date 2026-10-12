@@ -83,13 +83,22 @@ public sealed interface SonyRequest {
          * sensitivity controls, so it echoes back what the device last reported.
          */
         public val preservedAdaptive: NoiseAdaptiveFields = NoiseAdaptiveFields.Default,
+        /**
+         * The level to leave on the device while the state is [NoiseCancelling.Off].
+         *
+         * A V2 headset reports the ambient level whether or not noise control is on, and takes the
+         * value it is given, so switching noise cancelling off with a level of zero would throw away
+         * whatever the rider had set. V1 marks its noise cancelling slot separately and ignores this.
+         */
+        public val ambientLevel: AmbientLevel = AmbientLevel.Silent,
     ) : SonyRequest {
         override val dataType: MdrDataType = MdrDataType.DataMdr
 
         override fun payload(capabilities: SonyCapabilities): ByteArray {
             val dialect =
                 requireNotNull(capabilities.noiseCancelling) { "noise control was not advertised" }
-            return byteArrayOf(NcAsm.SET_PARAM) + encodeNcAsmSet(state, dialect, preservedAdaptive)
+            return byteArrayOf(NcAsm.SET_PARAM) +
+                encodeNcAsmSet(state, dialect, preservedAdaptive, ambientLevel)
         }
 
         override fun supportedBy(capabilities: SonyCapabilities): Boolean =
@@ -100,7 +109,7 @@ public sealed interface SonyRequest {
         override val dataType: MdrDataType = MdrDataType.DataMdr
 
         override fun payload(capabilities: SonyCapabilities): ByteArray =
-            byteArrayOf(EqualizerCommands.GET_PARAM, EqualizerCommands.PRESET_EQ)
+            byteArrayOf(EqualizerCommands.GET_PARAM, presetEqType(capabilities.version))
 
         override fun supportedBy(capabilities: SonyCapabilities): Boolean =
             capabilities.supportsEqualizerPreset
@@ -114,7 +123,7 @@ public sealed interface SonyRequest {
             // drops both, so a preset change carries a preset and nothing else.
             byteArrayOf(
                 EqualizerCommands.SET_PARAM,
-                EqualizerCommands.PRESET_EQ,
+                presetEqType(capabilities.version),
                 preset.wire.toByte(),
                 NO_BANDS,
             )
@@ -172,10 +181,20 @@ internal object EqualizerCommands {
     const val RET_PARAM: Byte = 0x57
     const val SET_PARAM: Byte = 0x58
     const val NTFY_PARAM: Byte = 0x59
-
-    /** V1 and V2 both use 0x00 for the preset slot. */
-    const val PRESET_EQ: Byte = 0x00
 }
+
+/**
+ * The slot the preset equalizer sits in.
+ *
+ * The two generations number this differently, and V1's value is V2's Clear Bass, so the wrong one
+ * does not read as an error: V2 would answer the query with a bass level and take a preset write for
+ * one too. `EqEbbInquiredType` in libmdr's ProtocolV1T1.hpp and ProtocolV2T1.hpp.
+ */
+internal fun presetEqType(version: ProtocolVersion): Byte =
+    when (version) {
+        ProtocolVersion.V1 -> 0x01
+        ProtocolVersion.V2 -> 0x00
+    }
 
 internal object BatteryCommands {
     const val V1_RET: Byte = 0x11

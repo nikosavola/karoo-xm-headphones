@@ -23,7 +23,16 @@ public object SonyMessageCodec {
         sequence: Int,
     ): MdrFrame = MdrFrame(request.dataType, sequence, request.payload(capabilities))
 
-    public fun decode(frame: MdrFrame): SonyResponse {
+    /**
+     * Reads a packet the headset sent.
+     *
+     * [version] is the generation the session settled on in the handshake, and null before then. It
+     * is needed because one reply's meaning genuinely depends on it: V1 puts the preset equalizer in
+     * slot 0x01 and V2 puts its Clear Bass there, so a packet with a 0x01 in that position is a preset
+     * on one generation and a bass level on the other. Nothing that arrives before the handshake is
+     * ambiguous, which is why null is allowed.
+     */
+    public fun decode(frame: MdrFrame, version: ProtocolVersion?): SonyResponse {
         if (frame.type == MdrDataType.Ack) return SonyResponse.Acknowledged(frame.sequence)
         val payload = frame.payload
         if (payload.isEmpty()) return SonyResponse.Unrecognised(NO_COMMAND)
@@ -41,7 +50,8 @@ public object SonyMessageCodec {
             NcAsm.RET_PARAM,
             NcAsm.NTFY_PARAM -> noiseControl(payload) ?: SonyResponse.Unrecognised(commandWire)
             EqualizerCommands.RET_PARAM,
-            EqualizerCommands.NTFY_PARAM -> equalizer(payload) ?: SonyResponse.Unrecognised(commandWire)
+            EqualizerCommands.NTFY_PARAM ->
+                equalizer(payload, version) ?: SonyResponse.Unrecognised(commandWire)
             else -> SonyResponse.Unrecognised(commandWire)
         }
     }
@@ -105,15 +115,25 @@ public object SonyMessageCodec {
         return when (payload[1]) {
             BatteryInquiry.SINGLE -> SonyResponse.Battery(BatteryReading.Single(batteryStatus(payload, 2)))
             BatteryInquiry.LEFT_RIGHT ->
-                if (payload.size < 6) {
-                    null
-                } else {
-                    SonyResponse.Battery(
-                        BatteryReading.LeftRight(
-                            left = batteryStatus(payload, 2),
-                            right = batteryStatus(payload, 4),
-                        ),
-                    )
+                when {
+                    // A charging byte after each level.
+                    payload.size >= 6 ->
+                        SonyResponse.Battery(
+                            BatteryReading.LeftRight(
+                                left = batteryStatus(payload, 2),
+                                right = batteryStatus(payload, 4),
+                            ),
+                        )
+                    // Some models report the levels with a zero placeholder between them and no
+                    // charging byte at all, which is the earbuds' form rather than the headsets'.
+                    payload.size == 5 ->
+                        SonyResponse.Battery(
+                            BatteryReading.LeftRight(
+                                left = levelOnly(payload, 2),
+                                right = levelOnly(payload, 4),
+                            ),
+                        )
+                    else -> null
                 }
             // The cradle and threshold forms carry fields this client does not ask for.
             else -> null
@@ -126,15 +146,25 @@ public object SonyMessageCodec {
             charging = chargingFromWire(payload[offset + 1].toInt() and 0xFF),
         )
 
+    /** A level with no charging byte to go with it; the device reported only half the answer. */
+    private fun levelOnly(payload: ByteArray, offset: Int): BatteryStatus =
+        BatteryStatus.fromDevice(payload[offset].toInt() and 0xFF, charging = false)
+
     private fun noiseControl(payload: ByteArray): SonyResponse.NoiseControl? {
         if (payload.size < 3) return null
         return decodeNcAsmParam(payload, payload[1])
     }
 
-    private fun equalizer(payload: ByteArray): SonyResponse.Equalizer? {
+    private fun equalizer(
+        payload: ByteArray,
+        version: ProtocolVersion?,
+    ): SonyResponse.Equalizer? {
         if (payload.size < 3) return null
-        // Only the preset form is read; the EBB and custom-band forms carry curves nothing displays.
-        if (payload[1] != EqualizerCommands.PRESET_EQ) return null
+        // Nothing the equalizer says can be read before the generation is known.
+        val presetSlot = version?.let(::presetEqType) ?: return null
+        // Only the preset form is read. The Clear Bass and custom-band forms carry curves nothing
+        // displays, and on V2 the Clear Bass slot is the one V1 keeps its preset in.
+        if (payload[1] != presetSlot) return null
         return SonyResponse.Equalizer(EqualizerPreset.fromWireOrNull(payload[2].toInt() and 0xFF))
     }
 

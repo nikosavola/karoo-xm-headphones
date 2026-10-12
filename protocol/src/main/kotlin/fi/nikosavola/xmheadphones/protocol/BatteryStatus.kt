@@ -34,5 +34,11 @@ public sealed interface BatteryReading {
     }
 }
 
-/** The charging byte as the protocol spells it. The unknown value is 0xF0 in V1 and 0x02 in V2. */
+/**
+ * The charging byte as the protocol spells it.
+ *
+ * Only `0x01` means charging; everything else, the device's own "unknown" value (0xF0 in V1, 0x02 in
+ * V2) included, reads as not charging. The protocol has no third state to put on a ride screen, and a
+ * headset that is not on a charger is the answer that is wrong less often.
+ */
 internal fun chargingFromWire(wire: Int): Boolean = wire == 0x01

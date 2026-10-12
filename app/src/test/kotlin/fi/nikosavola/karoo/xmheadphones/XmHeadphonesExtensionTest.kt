@@ -16,6 +16,7 @@ import fi.nikosavola.xmheadphones.protocol.MdrDecodeResult
 import fi.nikosavola.xmheadphones.protocol.MdrFrame
 import fi.nikosavola.xmheadphones.protocol.MdrFrameCodec
 import fi.nikosavola.xmheadphones.protocol.NoiseCancelling
+import android.content.Intent
 import io.hammerhead.karooext.models.ActiveRideProfile
 import io.hammerhead.karooext.models.DataType
 import io.hammerhead.karooext.models.InRideAlert
@@ -25,6 +26,7 @@ import io.hammerhead.karooext.models.ViewConfig
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -62,6 +64,23 @@ class XmHeadphonesExtensionTest {
 
     @After
     fun tearDown() = XmHeadphonesClient.resetForTests()
+
+    @Test
+    fun `the manifest points the Karoo system at a service that exists`() {
+        // The fake host builds the extension class directly, so nothing else here would notice a
+        // manifest that names a class the app does not have, which is what a rider would meet first.
+        val services =
+            karoo.app.packageManager.queryIntentServices(
+                Intent(KAROO_EXTENSION_ACTION).setPackage(karoo.app.packageName),
+                0,
+            )
+
+        assertEquals(1, services.size)
+        val name = services.first().serviceInfo.name
+        assertEquals(XmHeadphonesExtension::class.java.name, name)
+        // Loadable, which is all the system needs to bind it and all a typo would break.
+        assertNotNull(Class.forName(name))
+    }
 
     @Test
     fun `nothing is looked for until a profile shows a headphone field`() {
@@ -224,6 +243,10 @@ class XmHeadphonesExtensionTest {
         )
 
     private fun viewConfig() = ViewConfig(gridSize = 30 to 15, viewSize = 200 to 100, textSize = 14)
+
+    private companion object {
+        const val KAROO_EXTENSION_ACTION = "io.hammerhead.karooext.KAROO_EXTENSION"
+    }
 
     /** Finds the headset and waits until the extension has a usable connection to it. */
     private fun connected() {

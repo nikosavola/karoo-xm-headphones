@@ -49,13 +49,14 @@ internal fun encodeNcAsmSet(
     state: NoiseCancelling,
     dialect: NcAsmDialect,
     adaptive: NoiseAdaptiveFields,
+    ambientLevel: AmbientLevel,
 ): ByteArray =
     when (dialect) {
         NcAsmDialect.V1 -> encodeV1(state)
-        NcAsmDialect.V2 -> byteArrayOf(dialect.inquiredType) + encodeV2Body(state)
+        NcAsmDialect.V2 -> byteArrayOf(dialect.inquiredType) + encodeV2Body(state, ambientLevel)
         NcAsmDialect.V2NoiseAdaptive ->
             byteArrayOf(dialect.inquiredType) +
-                encodeV2Body(state) +
+                encodeV2Body(state, ambientLevel) +
                 byteArrayOf(
                     if (adaptive.autoAmbient) ON else OFF,
                     adaptive.sensitivity.wire.toByte(),
@@ -94,7 +95,7 @@ private fun encodeV1(state: NoiseCancelling): ByteArray {
     )
 }
 
-private fun encodeV2Body(state: NoiseCancelling): ByteArray {
+private fun encodeV2Body(state: NoiseCancelling, ambientLevel: AmbientLevel): ByteArray {
     val ambient = state as? NoiseCancelling.Ambient
     return byteArrayOf(
         CHANGED,
@@ -103,7 +104,10 @@ private fun encodeV2Body(state: NoiseCancelling): ByteArray {
         // only has to move the level.
         if (state is NoiseCancelling.Cancelling) MODE_NC else MODE_ASM,
         if (ambient?.focusOnVoice == true) ASM_MODE_VOICE else ASM_MODE_NORMAL,
-        (ambient?.level?.steps ?: 0).toByte(),
+        // The level is sent whatever the mode, as the reference client does: a headset takes it, and
+        // sending zero here is what would lose the rider's setting when they switch noise cancelling
+        // off.
+        (ambient?.level ?: ambientLevel).steps.toByte(),
     )
 }
 

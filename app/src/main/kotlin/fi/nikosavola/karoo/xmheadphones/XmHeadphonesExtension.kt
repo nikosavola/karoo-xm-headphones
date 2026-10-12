@@ -112,7 +112,7 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, EXTENSION_VERSION) {
             try {
                 val link =
                     withTimeoutOrNull(BORROW_TIMEOUT_MS) {
-                        client.state.first { it.link != HeadphonesLink.Searching && it.link != HeadphonesLink.Connecting }
+                        client.state.first { it.link.isSettled() }
                     }?.link
                 if (link != HeadphonesLink.Connected) {
                     Timber.w("Nothing to toggle; the headset link is $link")
@@ -146,6 +146,23 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, EXTENSION_VERSION) {
         karooSystem.disconnect()
         super.onDestroy()
     }
+
+    /**
+     * Whether a borrow can stop waiting.
+     *
+     * [HeadphonesLink.Idle] is not one of these: it is what the state says before the connection has
+     * even been asked for, so treating it as an answer would make the first press of the button do
+     * nothing at all while later ones worked.
+     */
+    private fun HeadphonesLink.isSettled(): Boolean =
+        when (this) {
+            HeadphonesLink.Connected,
+            HeadphonesLink.NoPermission,
+            HeadphonesLink.BluetoothOff -> true
+            HeadphonesLink.Idle,
+            HeadphonesLink.Searching,
+            HeadphonesLink.Connecting -> false
+        }
 
     companion object {
         /** Must match `id` in res/xml/extension_info.xml. */

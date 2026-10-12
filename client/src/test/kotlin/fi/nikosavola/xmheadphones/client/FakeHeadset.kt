@@ -22,6 +22,8 @@ internal class FakeHeadset(
     val peripheral: FakeBlePeripheral,
     private val version: ProtocolVersion = ProtocolVersion.V1,
     functions: List<Int> = V1_FUNCTIONS,
+    /** A V2 headset can report either command table switched off, which makes it unusable. */
+    private val table1Enabled: Boolean = true,
 ) {
     private val functionIds = functions.toList()
 
@@ -89,7 +91,7 @@ internal class FakeHeadset(
                 noiseCancelling = decodeNoiseControl(payload)
                 send(command(NC_NTFY, noiseControlFields()))
             }
-            EQ_GET -> send(command(0x57, hex("00") + byteArrayOf(equalizerPreset.toByte(), 0x00)))
+            EQ_GET -> send(command(0x57, equalizerReply()))
             else -> Unit // A command this fake does not model is acknowledged and otherwise ignored.
         }
     }
@@ -98,8 +100,9 @@ internal class FakeHeadset(
         when (version) {
             // Two byte version, then nothing else.
             ProtocolVersion.V1 -> hex("00" + "4010")
-            // Four byte version, then one enable flag per command table.
-            ProtocolVersion.V2 -> hex("00" + "03000015" + "00" + "00")
+            // Four byte version, then one enable flag per command table, where 0x00 is enabled.
+            ProtocolVersion.V2 ->
+                hex("00" + "03000015" + (if (table1Enabled) "00" else "01") + "00")
         }
 
     private fun deviceInfo(question: Byte) =
@@ -121,6 +124,14 @@ internal class FakeHeadset(
                 byteArrayOf(0x00, functionIds.size.toByte()) +
                     functionIds.flatMap { listOf(it.toByte(), 0x00) }.toByteArray()
         }
+
+    /** The slot the preset lives in is 0x01 on V1 and 0x00 on V2, as a real headset reports it. */
+    private fun equalizerReply(): ByteArray =
+        byteArrayOf(
+            if (version == ProtocolVersion.V1) 0x01 else 0x00,
+            equalizerPreset.toByte(),
+            0x00,
+        )
 
     private fun battery(): ByteArray =
         byteArrayOf(0x00, batteryPercent.toByte(), if (charging) 0x01 else 0x00)

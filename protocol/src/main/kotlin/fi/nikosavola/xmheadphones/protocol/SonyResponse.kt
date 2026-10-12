@@ -33,8 +33,9 @@ public sealed interface SonyResponse {
     public data class Battery(public val reading: BatteryReading) : SonyResponse
 
     /**
-     * [settled] is false while the device is mid-adjustment, as it reports while an ambient slider is
-     * being dragged. A mode change should not be confirmed to the rider until it is true.
+     * [settled] is false while the device is still moving to the value it was given, which it reports
+     * while an ambient slider is being dragged. This client reports it rather than waiting on it: a
+     * write is confirmed by the acknowledgement, and the state that follows arrives as a notification.
      */
     public data class NoiseControl(
         public val state: NoiseCancelling,

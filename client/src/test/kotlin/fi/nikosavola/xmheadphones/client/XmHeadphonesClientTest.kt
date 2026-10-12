@@ -9,6 +9,7 @@ import fi.nikosavola.karooext.testing.robolectric.RobolectricPump
 import fi.nikosavola.karooext.testing.robolectric.ble.FakeBle
 import fi.nikosavola.karooext.testing.robolectric.ble.FakeBlePeripheral
 import fi.nikosavola.xmheadphones.protocol.AmbientLevel
+import fi.nikosavola.xmheadphones.protocol.EqualizerPreset
 import fi.nikosavola.xmheadphones.protocol.NoiseCancelling
 import fi.nikosavola.xmheadphones.protocol.ProtocolVersion
 import org.junit.After
@@ -137,6 +138,44 @@ class XmHeadphonesClientTest {
     }
 
     @Test
+    fun `switching noise cancelling off on a V2 headset keeps the ambient level`() {
+        ble.grantPermissions()
+        headset = headsetWith(version = ProtocolVersion.V2, functions = FakeHeadset.V2_FUNCTIONS)
+        headset.noiseCancelling = NoiseCancelling.Ambient(AmbientLevel.clamped(14), false)
+        headset.install()
+        connect()
+
+        command { client.setNoiseCancelling(NoiseCancelling.Off) }
+
+        val write = await { headset.lastNoiseControlWrite() }
+        assertEquals("the effect is sent as off", 0x00, write[3].toInt() and 0xFF)
+        assertEquals("the level is left where the rider had it", 14, write[6].toInt() and 0xFF)
+    }
+
+    @Test
+    fun `a V1 headset's equalizer preset is read from the slot V1 keeps it in`() {
+        ble.grantPermissions()
+        headset = headsetWith()
+        headset.install()
+
+        val state = connect()
+
+        // The reply puts the preset in slot 0x01, which on V2 is the Clear Bass level.
+        assertEquals(EqualizerPreset.Pop, state.equalizerPreset)
+    }
+
+    @Test
+    fun `a V2 headset's equalizer preset is read from the slot V2 keeps it in`() {
+        ble.grantPermissions()
+        headset = headsetWith(version = ProtocolVersion.V2, functions = FakeHeadset.V2_FUNCTIONS)
+        headset.install()
+
+        val state = connect()
+
+        assertEquals(EqualizerPreset.Pop, state.equalizerPreset)
+    }
+
+    @Test
     fun `a headset that does not advertise noise cancelling is not offered it`() {
         ble.grantPermissions()
         headset = headsetWith(functions = FakeHeadset.V1_FUNCTIONS - 0x62)
@@ -168,6 +207,24 @@ class XmHeadphonesClientTest {
         command { client.setNoiseCancelling(NoiseCancelling.Ambient(AmbientLevel.fromStepsOrNull(7)!!, true)) }
 
         assertArrayEquals(hex("68170101010107"), await { headset.lastNoiseControlWrite() })
+    }
+
+    @Test
+    fun `a V2 headset with table one switched off is reported rather than left silent`() {
+        ble.grantPermissions()
+        headset =
+            FakeHeadset(peripheral("AA:BB:CC:DD:EE:01"), ProtocolVersion.V2, FakeHeadset.V2_FUNCTIONS, table1Enabled = false)
+                .also { this.peripheral = it.peripheral }
+        headset.install()
+        client.start()
+        ble.awaitScan()
+        headset.peripheral.advertise()
+        headset.peripheral.connect()
+        headset.peripheral.awaitSubscribed(SonyGatt.NOTIFY)
+
+        val error = await { client.state.value.lastError }
+
+        assertTrue("error was: $error", error.contains("table 1 disabled"))
     }
 
     @Test

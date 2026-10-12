@@ -7,10 +7,10 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.TextUnitType
 import androidx.compose.ui.unit.dp
 import androidx.glance.GlanceModifier
-import androidx.glance.layout.Alignment as GlanceAlignment
 import androidx.glance.appwidget.ExperimentalGlanceRemoteViewsApi
 import androidx.glance.appwidget.GlanceRemoteViews
 import androidx.glance.color.ColorProvider
+import androidx.glance.layout.Alignment as GlanceAlignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.padding
@@ -31,12 +31,19 @@ import io.hammerhead.karooext.models.ViewConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
-/** The type ids the extension manifest declares. A mismatch registers a field with nothing behind it. */
+/**
+ * The type ids the extension manifest declares.
+ *
+ * A mismatch registers a field Karoo draws with nothing behind it, which shows up as a field that
+ * never leaves Searching, so the manifest and these constants have to agree.
+ */
 internal object FieldIds {
     const val BATTERY = "battery"
     const val AMBIENT_LEVEL = "ambient-level"
@@ -44,8 +51,8 @@ internal object FieldIds {
 }
 
 /**
- * A field that Karoo draws itself: the title from the extension manifest and one number. That is
- * what makes a battery or an ambient level look like a built-in field rather than an imitation.
+ * A field Karoo draws itself: the title from the extension manifest and one number. That is what
+ * makes a battery or an ambient level look like a built-in field rather than an imitation.
  */
 internal abstract class NumericField(
     private val client: XmHeadphonesClient,
@@ -56,6 +63,9 @@ internal abstract class NumericField(
 
     /** Null while the headset has not answered that part of its state yet. */
     protected abstract fun value(state: XmHeadphonesState): Double?
+
+    /** False for a headset that does not have this field's feature at all. */
+    protected abstract fun offered(state: XmHeadphonesState): Boolean
 
     override fun startStream(emitter: Emitter<StreamState>) {
         Timber.d("Start $typeId stream")
@@ -75,6 +85,9 @@ internal abstract class NumericField(
     private fun XmHeadphonesState.toStreamState(): StreamState {
         val current = value(this)
         return when {
+            // A headset that never advertised the feature is not going to report it, so the field is
+            // unavailable rather than searching for the rest of the ride.
+            link == HeadphonesLink.Connected && !offered(this) -> StreamState.NotAvailable
             link == HeadphonesLink.Connected && current != null ->
                 StreamState.Streaming(DataPoint(dataTypeId, mapOf(DataType.Field.SINGLE to current)))
             // Connected but still waiting for this particular value, or on the way there: Karoo shows
@@ -85,23 +98,27 @@ internal abstract class NumericField(
             else -> StreamState.NotAvailable
         }
     }
-
 }
 
 internal class BatteryDataType(client: XmHeadphonesClient, extension: String) :
     NumericField(client, extension, FieldIds.BATTERY) {
     override fun value(state: XmHeadphonesState): Double? = state.batteryPercent?.toDouble()
+
+    override fun offered(state: XmHeadphonesState): Boolean =
+        state.capabilities?.batteryShape != null
 }
 
 internal class AmbientLevelDataType(client: XmHeadphonesClient, extension: String) :
     NumericField(client, extension, FieldIds.AMBIENT_LEVEL) {
     override fun value(state: XmHeadphonesState): Double? =
         (state.noiseCancelling as? NoiseCancelling.Ambient)?.level?.steps?.toDouble()
+
+    override fun offered(state: XmHeadphonesState): Boolean = state.supportsNoiseCancelling
 }
 
 /**
- * The noise control mode, which has no number to show: it is text, so the field is drawn by the
- * extension instead of by Karoo.
+ * The noise control mode, which has no number to show: it is text, so the extension draws the field
+ * instead of Karoo.
  */
 @OptIn(ExperimentalGlanceRemoteViewsApi::class)
 internal class NoiseCancellingDataType(
@@ -116,12 +133,16 @@ internal class NoiseCancellingDataType(
         val job =
             scope.launch {
                 client.state
-                    .map { it.noiseCancelling to it.link }
-                    // Only on a real change: composing RemoteViews is far too heavy for a ride
-                    // screen's refresh rate and this value changes when the rider presses a button.
+                    .map { labelOf(context, it) }
                     .distinctUntilChanged()
-                    .collect { (state, link) ->
-                        emitter.updateView(compose(context, config, state, link).remoteViews)
+                    .conflate()
+                    .collect { label ->
+                        emitter.updateView(compose(context, config, label).remoteViews)
+                        // The view emitter drops an update that lands within 900 ms of the last one
+                        // and never re-sends it, so renders are spaced past that. Conflation means a
+                        // change arriving in the meantime becomes the next render rather than being
+                        // lost, so nothing the rider changed goes unshown.
+                        delay(MIN_RENDER_INTERVAL_MS)
                     }
             }
         emitter.setCancellable {
@@ -130,46 +151,50 @@ internal class NoiseCancellingDataType(
         }
     }
 
-    private suspend fun compose(
-        context: Context,
-        config: ViewConfig,
-        state: NoiseCancelling?,
-        link: HeadphonesLink,
-    ) = glance.compose(context, DpSize.Unspecified) {
-        Box(
-            modifier = GlanceModifier.fillMaxSize().padding(4.dp),
-            contentAlignment = GlanceAlignment.Center,
-        ) {
-            Text(
-                text = label(context, state, link),
-                style =
-                    TextStyle(
-                        fontSize = TextUnit(config.textSize.toFloat(), TextUnitType.Sp),
-                        textAlign = TextAlign.Center,
-                        color = ColorProvider(Color.Black, Color.White),
-                    ),
-            )
+    private suspend fun compose(context: Context, config: ViewConfig, label: String) =
+        glance.compose(context, DpSize.Unspecified) {
+            Box(
+                modifier = GlanceModifier.fillMaxSize().padding(4.dp),
+                contentAlignment = GlanceAlignment.Center,
+            ) {
+                Text(
+                    text = label,
+                    style =
+                        TextStyle(
+                            fontSize = TextUnit(config.textSize.toFloat(), TextUnitType.Sp),
+                            textAlign = TextAlign.Center,
+                            color = ColorProvider(Color.Black, Color.White),
+                        ),
+                )
+            }
         }
-    }
 
-    private fun label(
-        context: Context,
-        state: NoiseCancelling?,
-        link: HeadphonesLink,
-    ): String =
-        when {
-            link != HeadphonesLink.Connected -> context.getString(R.string.state_searching)
-            state is NoiseCancelling.Cancelling -> context.getString(R.string.nc_noise_cancelling)
-            state is NoiseCancelling.Ambient ->
-                if (state.focusOnVoice) {
+    private fun labelOf(context: Context, state: XmHeadphonesState): String {
+        // Bound to a local: the property comes from another module, so it cannot be smart cast.
+        val noiseCancelling = state.noiseCancelling
+        return when {
+            state.link == HeadphonesLink.NoPermission ->
+                context.getString(R.string.state_no_permission)
+            state.link == HeadphonesLink.BluetoothOff ->
+                context.getString(R.string.state_bluetooth_off)
+            state.link != HeadphonesLink.Connected -> context.getString(R.string.state_searching)
+            noiseCancelling is NoiseCancelling.Cancelling ->
+                context.getString(R.string.nc_noise_cancelling)
+            noiseCancelling is NoiseCancelling.Ambient ->
+                if (noiseCancelling.focusOnVoice) {
                     context.getString(R.string.nc_ambient_voice)
                 } else {
                     context.getString(R.string.nc_ambient)
                 }
-            state is NoiseCancelling.Off -> context.getString(R.string.nc_off)
+            noiseCancelling is NoiseCancelling.Off -> context.getString(R.string.nc_off)
             // Connected, but the headset does not offer noise control at all.
             else -> context.getString(R.string.state_unsupported)
         }
+    }
+
+    private companion object {
+        const val MIN_RENDER_INTERVAL_MS = 1_000L
+    }
 }
 
 /** The wire ids of every field this extension declares, for matching against a ride profile. */

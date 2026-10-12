@@ -21,6 +21,8 @@
     <string name="nc_ambient_voice">Ambient sound, voice</string>
     <string name="state_searching">Searching…</string>
     <string name="state_unsupported">Not supported</string>
+    <string name="state_no_permission">No permission</string>
+    <string name="state_bluetooth_off">Bluetooth off</string>
 
     <!-- Alerts -->
     <string name="alert_disconnected_title">Headset disconnected</string>
@@ -45,9 +47,7 @@
     <string name="settings_battery">Headset battery: %1$d%%</string>
     <string name="settings_forget_help">Forget the headset to pair a different one next time.</string>
     <string name="settings_forgotten">Forgotten. A different headset will be used next time.</string>
-    <string name="settings_speak_to_chat">Speak-to-chat</string>
+    <string name="settings_focus_on_voice">Focus on voice</string>
     <string name="settings_equalizer">Equalizer</string>
-    <string name="settings_device">Device</string>
-    <string name="settings_autoconnect">Connect automatically</string>
     <string name="settings_forget">Forget headset</string>
 </resources>

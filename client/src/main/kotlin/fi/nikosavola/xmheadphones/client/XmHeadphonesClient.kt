@@ -25,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -115,11 +116,15 @@ public class XmHeadphonesClient private constructor(private val context: Context
     public fun forget() {
         Timber.i("Forgetting headset ${savedAddress}")
         prefs.edit().remove(KEY_ADDRESS).apply()
-        if (job != null) {
-            job?.cancel()
-            activeSession = null
-            _state.value = XmHeadphonesState()
-            job = scope.launch { runForever() }
+        val previous = job ?: return
+        activeSession = null
+        _state.value = XmHeadphonesState()
+        // The cancelled loop clears activeSession again as it unwinds, so the next one waits for it
+        // rather than racing it. Without that, the stale cleanup can null the new session and every
+        // command goes nowhere until the following reconnect.
+        job = scope.launch {
+            previous.cancelAndJoin()
+            runForever()
         }
     }
 
@@ -212,7 +217,13 @@ public class XmHeadphonesClient private constructor(private val context: Context
                             },
                     )
                 is SonyResponse.Battery -> current.copy(battery = response.reading)
-                is SonyResponse.NoiseControl -> current.copy(noiseCancelling = response.state)
+                is SonyResponse.NoiseControl ->
+                    current.copy(
+                        noiseCancelling = response.state,
+                        lastAmbientLevel =
+                            (response.state as? NoiseCancelling.Ambient)?.level
+                                ?: current.lastAmbientLevel,
+                    )
                 is SonyResponse.Equalizer -> current.copy(equalizerPreset = response.preset)
                 is SonyResponse.Acknowledged,
                 is SonyResponse.ProtocolInfo,

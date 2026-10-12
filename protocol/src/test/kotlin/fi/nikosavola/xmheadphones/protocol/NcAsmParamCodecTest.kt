@@ -86,15 +86,32 @@ class NcAsmParamCodecTest {
     }
 
     @Test
+    fun `switching off on V2 keeps the ambient level the device was given`() {
+        // A V2 headset reports the level whether or not noise control is on, and takes whatever it
+        // is told, so sending zero here would throw away the rider's setting.
+        val payload =
+            SonyRequest.SetNoiseControl(
+                NoiseCancelling.Off,
+                ambientLevel = AmbientLevel.clamped(14),
+            )
+                .payload(capabilities(NcAsmDialect.V2))
+
+        assertContentEquals(hex("6817010001000e"), payload)
+    }
+
+    @Test
     fun `a noise adaptive report without its extra fields is refused`() {
         val tooShort = hex("69190101010003")
 
-        assertNull(SonyMessageCodec.decode(frame(tooShort)).let { it as? SonyResponse.NoiseControl })
+        assertNull(SonyMessageCodec.decode(frame(tooShort), version = null) as? SonyResponse.NoiseControl)
     }
 
     @Test
     fun `an unknown inquired type is not read as noise control`() {
-        assertNull(SonyMessageCodec.decode(frame(hex("69220101010000"))) as? SonyResponse.NoiseControl)
+        assertNull(
+            SonyMessageCodec.decode(frame(hex("69220101010000")), version = null)
+                as? SonyResponse.NoiseControl,
+        )
     }
 
     @Test
@@ -108,7 +125,7 @@ class NcAsmParamCodecTest {
     @Test
     fun `a device mid-adjustment reports itself as unsettled`() {
         // V2 valueChangeStatus 0x00 means the device is still moving to the requested value.
-        val response = SonyMessageCodec.decode(frame(hex("69170001010005")))
+        val response = SonyMessageCodec.decode(frame(hex("69170001010005")), version = null)
 
         assertEquals(
             SonyResponse.NoiseControl(
@@ -150,11 +167,14 @@ class NcAsmParamCodecTest {
         setPayload.copyOf().also { it[0] = NTFY_PARAM }
 
     private fun decodeState(setPayload: ByteArray): NoiseCancelling =
-        (SonyMessageCodec.decode(frame(asDeviceReport(setPayload))) as SonyResponse.NoiseControl).state
+        report(setPayload).state
 
-    private fun decodeAdaptive(setPayload: ByteArray): NoiseAdaptiveFields? =
-        (SonyMessageCodec.decode(frame(asDeviceReport(setPayload))) as SonyResponse.NoiseControl)
-            .adaptive
+    private fun decodeAdaptive(setPayload: ByteArray): NoiseAdaptiveFields? = report(setPayload).adaptive
+
+    /** Noise control reads the same in both generations, so the version is left unknown here. */
+    private fun report(setPayload: ByteArray): SonyResponse.NoiseControl =
+        SonyMessageCodec.decode(frame(asDeviceReport(setPayload)), version = null)
+            as SonyResponse.NoiseControl
 
     private fun frame(payload: ByteArray): MdrFrame =
         MdrFrame(MdrDataType.DataMdr, 0, payload)

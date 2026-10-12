@@ -5,18 +5,17 @@ plugins {
   `maven-publish`
 }
 
+group = "fi.nikosavola.xmheadphones"
+version = System.getenv("RELEASE_VERSION")?.removePrefix("v") ?: "0.1.0-SNAPSHOT"
+
 kotlin {
   explicitApi()
   jvmToolchain(17)
 }
 
-java {
-  withSourcesJar()
-  withJavadocJar()
-}
+java { withSourcesJar() }
 
 dependencies {
-  implementation(libs.kotlinx.serialization.json)
   testImplementation(libs.junit)
   testImplementation(kotlin("test"))
 }
