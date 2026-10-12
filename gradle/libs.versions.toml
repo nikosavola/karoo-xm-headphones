@@ -3,7 +3,7 @@ agp = "9.4.1"
 kotlin = "2.4.20"
 
 karooExt = "1.1.9"
-karooExtTesting = "0.1.1"
+karooExtTesting = "0.1.0"
 
 coroutines = "1.10.2"
 serialization = "1.11.0"

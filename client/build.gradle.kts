@@ -25,6 +25,7 @@ dependencies {
   testImplementation(kotlin("test"))
   testImplementation(libs.robolectric)
   testImplementation(libs.androidx.test.core)
+  testImplementation(libs.karoo.ext.testing)
   testImplementation(libs.karoo.ext.testing.robolectric)
 }
 
