@@ -37,10 +37,14 @@ crushed to one letter per line.
 The screen's content is about 695dp against the Karoo 3's 457dp of viewport, so it scrolls; the
 second image is that same state scrolled to the bottom. The ride-page fields are not pictured:
 Karoo draws those itself from the text and numbers the extension streams, and every image here is
-of the settings screen. Regenerate them by running the tests:
+of the settings screen.
+
+The tests draw these into `app/build/screenshots`, never over the committed copies, so a test run
+leaves the tree clean whatever the machine rasterizes like. Redrawing the images above is a
+deliberate step:
 
 ```sh
-./gradlew :app:testDebugUnitTest --tests '*ControlScreenScreenshotTest'
+./gradlew :app:recordScreenshots
 ```
 
 ## Modules

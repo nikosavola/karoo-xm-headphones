@@ -48,7 +48,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * Renders the control screen in the states it can be in and writes the README's images.
+ * Renders the control screen in the states it can be in and draws the README's images. They land in
+ * the build directory; `./gradlew :app:recordScreenshots` is what copies them over the tracked ones.
  *
  * These are the real composables drawn with values such a headset would report, not drawings of the
  * screen; the states are set directly because no headset is available to reach them.
@@ -314,8 +315,9 @@ class ControlScreenScreenshotTest {
         compose.waitForIdle()
     }
 
+    /** The build default too, for a run that comes from somewhere other than Gradle. */
     private fun screenshotDirectory(): String =
-        System.getProperty("xmheadphones.screenshotDir") ?: "docs/screenshots"
+        System.getProperty("xmheadphones.screenshotDir") ?: "build/screenshots"
 
     private companion object {
         const val SCREEN = "screen"

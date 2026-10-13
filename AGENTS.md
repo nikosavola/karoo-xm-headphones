@@ -52,11 +52,14 @@ The harness is pinned to 0.1.0 because JitPack's build of 0.1.1 fails. On that v
 notification callback is the one that carries the value, so the client overrides both variants; a
 newer harness would not change that, since Karoo 2 is API 26.
 
-The README's screenshots are recorded by `ControlScreenScreenshotTest`, which writes lossless WebP
-into `docs/screenshots/`. Running `./gradlew :app:testDebugUnitTest --tests '*ControlScreenScreenshotTest'`
-regenerates them, and every `./gradlew test` rewrites them too, so they cannot go stale on the
-machine that recorded them. That is also the hazard: on a host whose rasterization differs, a test
-run leaves six tracked files modified. CI reports that rather than failing on it.
+The README's screenshots are drawn by `ControlScreenScreenshotTest` as lossless WebP into
+`app/build/screenshots/`, not over the tracked copies. A test run therefore leaves the tree clean
+however differently a host rasterizes; `./gradlew :app:recordScreenshots` runs the tests and copies
+the result into `docs/screenshots/`, and is the only thing that writes there. CI renders them and
+reports a disagreement with what is committed rather than failing on it, since the committed images
+were recorded on macOS and that runner's rendering has never been compared with it. Run it with the
+test task excluded and it copies nothing and still reports success, because Gradle skips an empty
+copy before any of its own actions; the images are then simply left as they were.
 
 Assert text alone is not enough to call an image right: the first version of that test published a
 screen whose chip labels had been squeezed to one letter per line, which no text assertion can see.
