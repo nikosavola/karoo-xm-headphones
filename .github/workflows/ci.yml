@@ -8,9 +8,16 @@ on:
 permissions:
   contents: read
 
+# A private repo pays per minute, so a push that supersedes a running build cancels it rather than
+# paying for both.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,19 +25,29 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          # Matching the pin in gradle/gradle-daemon-jvm.properties leaves the toolchain resolver
+          # with nothing to download.
+          java-version: '21'
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
       # `check` and not just `test`: the library modules' lint gate is part of it, and a lint
       # failure there has no other way of showing up (the app still builds and the tests still pass).
       - run: ./gradlew check :app:assembleDebug
-      # The screenshot tests rewrite the README's images, so a runner that rasterizes differently
-      # leaves them modified. Reported rather than failed on: the images were recorded on macOS and
-      # this runner's rendering has never been compared with it, so a red build here would be about
-      # the difference between two rasterizers rather than about anything wrong with the code.
+      # The tests draw into app/build/screenshots and never over the tracked copies, so this compares
+      # what was just rendered against what is committed. A difference is reported rather than failed
+      # on: the committed images were recorded on macOS and this runner's rendering has never been
+      # compared with it, so a red build here would be about two rasterizers disagreeing rather than
+      # about anything wrong with the code.
       - name: Report screenshot drift
         run: |
-          if ! git diff --quiet -- docs/screenshots; then
-            echo "::warning::docs/screenshots was rewritten by the tests; the committed images were recorded elsewhere"
-            git --no-pager diff --stat -- docs/screenshots
+          # Absent is not the same as different, and the two need telling apart: the tests write
+          # these images themselves, so a green build can in principle finish without any. Absence is
+          # an error annotation rather than a failed step for the same reason a difference is only a
+          # warning, since this runner cannot be checked against the machine that recorded them.
+          if [ ! -d app/build/screenshots ]; then
+            echo "::error::nothing was rendered into app/build/screenshots, so nothing was compared"
+            exit 0
+          fi
+          if ! diff --recursive --brief docs/screenshots app/build/screenshots; then
+            echo "::warning::the committed screenshots differ from the ones just rendered"
           fi
