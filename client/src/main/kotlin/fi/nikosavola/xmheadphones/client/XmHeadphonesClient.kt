@@ -11,6 +11,7 @@ import android.os.Build
 import fi.nikosavola.xmheadphones.protocol.DeviceInfoQuestion
 import fi.nikosavola.xmheadphones.protocol.EqualizerPreset
 import fi.nikosavola.xmheadphones.protocol.NoiseCancelling
+import fi.nikosavola.xmheadphones.protocol.SonyDeviceInfo
 import fi.nikosavola.xmheadphones.protocol.SonyRequest
 import fi.nikosavola.xmheadphones.protocol.SonyResponse
 import java.io.IOException
@@ -182,8 +183,14 @@ public class XmHeadphonesClient private constructor(private val context: Context
         session.readNoiseCancelling()
     }
 
+    @SuppressLint("MissingPermission") // hasPermissions ran at the top of the loop
     private suspend fun runForever() {
         var failedAttempts = 0
+        // The address the last attempt was for. A failure belongs to the headset that failed: it
+        // stays on screen while that headset is retried, which is what tells a rider why nothing is
+        // happening. The moment a different one is tried it goes, or a rider with two paired
+        // headsets reads the first one's failure as the second one's, the one they are waiting on.
+        var lastAttempted: String? = null
         while (true) {
             val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
             if (!hasPermissions()) {
@@ -196,15 +203,31 @@ public class XmHeadphonesClient private constructor(private val context: Context
                 delay(PRECONDITION_POLL_MS)
                 continue
             }
-            setLink(HeadphonesLink.Searching)
-            val device = nextCandidate(adapter)
+            val bonded = runCatching { adapter.bondedDevices }
+            val device = bonded.getOrNull()?.let { nextCandidate(it) }
             if (device == null) {
                 // Nothing paired looks like a headset. There is no scan that could find one: the
                 // control channel only exists once the headset is paired, and pairing is the rider's
                 // own step in Karoo's Bluetooth settings. So this waits for one to appear.
+                //
+                // Reading the list can fail on its own, with the permission going away while this
+                // loop runs. That is not a list that turned out empty, and telling a rider to pair a
+                // headset they have already paired is worse than saying the link is still looking.
+                if (bonded.isSuccess) {
+                    setLink(HeadphonesLink.NoPairedHeadset)
+                } else {
+                    Timber.w("Could not read the paired devices: ${bonded.exceptionOrNull()?.message}")
+                    setLink(HeadphonesLink.Searching)
+                }
                 delay(PAIRING_POLL_MS)
                 continue
             }
+            // Before the attempt is announced, so nothing can read a Connecting link beside the
+            // failure of the headset that is not the one being connected to.
+            if (lastAttempted != null && lastAttempted != device.address) {
+                _state.update { it.copy(lastError = null) }
+            }
+            lastAttempted = device.address
             setLink(HeadphonesLink.Connecting)
             val connected =
                 try {
@@ -232,19 +255,17 @@ public class XmHeadphonesClient private constructor(private val context: Context
     }
 
     /**
-     * The paired device to try, or null when none of them could be one.
+     * The paired device to try out of [bonded], or null when none of them could be one.
      *
      * A device the headset was last reached on goes first, since that is the one the rider is using.
      * [candidateIndex] is what passes over one that will not answer, so a rider with two headsets
      * reaches the second rather than retrying the first forever.
      */
-    @SuppressLint("MissingPermission") // hasPermissions ran first
-    private fun nextCandidate(adapter: BluetoothAdapter): BluetoothDevice? {
+    private fun nextCandidate(bonded: Set<BluetoothDevice>): BluetoothDevice? {
         val saved = savedAddress
         val factory = transport
         val candidates =
-            runCatching { adapter.bondedDevices }.getOrDefault(emptySet()).sortedByDescending {
-                device ->
+            bonded.sortedByDescending { device ->
                 when {
                     device.address == saved -> 2
                     // Whatever the transport can recognise its peer by. A device it cannot tell about
@@ -278,6 +299,7 @@ public class XmHeadphonesClient private constructor(private val context: Context
 
     /** False when the headset never answered, which is what moves the search on to the next one. */
     private suspend fun runSession(device: BluetoothDevice): Boolean {
+        forgetTheLastHeadsetIfThisIsADifferentOne(device)
         val session = SonySession(transport.open(device))
         val collector = scope.launch {
             session.responses.collect { response -> apply(response) }
@@ -297,6 +319,7 @@ public class XmHeadphonesClient private constructor(private val context: Context
                 _state.update {
                     it.copy(
                         link = HeadphonesLink.Connected,
+                        address = device.address,
                         capabilities = session.capabilities.value,
                         lastError = null,
                     )
@@ -312,6 +335,37 @@ public class XmHeadphonesClient private constructor(private val context: Context
             session.close()
         }
         return connected
+    }
+
+    /**
+     * Clears what the last headset reported when this is not that headset.
+     *
+     * The state keeps what a headset said across a drop on purpose, so a link that goes for a moment
+     * comes back showing the last known battery rather than a blank. Carried to a different headset
+     * that becomes a lie: one model name beside another's address, and a battery level that belongs
+     * to a headset no longer on the link.
+     *
+     * Before the session runs, not after the handshake. The session reports what it reads as it
+     * reads it, so clearing afterwards would throw away the answers it had just collected. The
+     * address moves with the clearing for the same reason: it is what tells the next attempt, and
+     * the reconnect after this one, which headset the values belong to.
+     */
+    private fun forgetTheLastHeadsetIfThisIsADifferentOne(device: BluetoothDevice) {
+        val address = _state.value.address
+        if (address == null || address == device.address) return
+        Timber.i("A different headset is on the link; dropping what $address reported")
+        _state.update {
+            it.copy(
+                address = device.address,
+                device = SonyDeviceInfo(),
+                capabilities = null,
+                battery = null,
+                noiseCancelling = null,
+                equalizerPreset = null,
+                lastAmbientLevel = null,
+                lastFocusOnVoice = null,
+            )
+        }
     }
 
     private fun apply(response: SonyResponse) {
