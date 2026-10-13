@@ -323,8 +323,8 @@ public class XmHeadphonesClient private constructor(private val context: Context
          * anything useful.
          *
          * Android 12 put BLE behind its own pair; before that, a scan result required location
-         * instead. Karoo 2 runs Android 8, so the second branch is a device this client is meant to
-         * run on rather than a leftover.
+         * instead. The Karoo in hand reports API 32, so the first branch is the live one; the second
+         * covers units still on an older platform, which is why it is not a leftover.
          *
          * This is public because a caller that keeps its own copy of the list can drift from it, and
          * the symptom is a rider stuck on a permission prompt that never satisfies the scan. Each

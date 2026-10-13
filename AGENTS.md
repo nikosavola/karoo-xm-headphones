@@ -52,9 +52,12 @@ driving the real client against a simulated headset over mocking the client away
 tests are written to the wire format by hand, so they disagree with the code under test when it is
 wrong.
 
-The harness is pinned to 0.1.0 because JitPack's build of 0.1.1 fails. On that version the API-33
-notification callback is the one that carries the value, so the client overrides both variants; a
-newer harness would not change that, since Karoo 2 is API 26.
+The harness is pinned to 0.1.0 because JitPack's build of 0.1.1 fails. On 0.1.0 the value never
+reaches the pre-API-33 notification callback, so every session test in `client` fails below SDK 33
+and the path the Karoo itself takes goes unexercised. The fix is karoo-ext-testing HEAD ("Deliver the
+pre-API-33 BLE notification value it was sent with"), which is not in the 0.1.1 tag either; built into
+Maven local it makes `XmHeadphonesClientTest` pass at 32 and 34 both, so bump the pin and run the
+client suite at 32 once a release carries it.
 
 The README's screenshots are drawn by `ControlScreenScreenshotTest` as lossless WebP into
 `app/build/screenshots/`, not over the tracked copies. A test run therefore leaves the tree clean
@@ -71,8 +74,9 @@ Each state's test now also checks that the slider and the switch exist, which ch
 that no chip's label wrapped (a chip squeezed narrow grows several times taller than the 32dp one
 line needs). Assert geometry, not just presence.
 
-The render is the Karoo 3's own 480x800 at 280 dpi, set by `@Config(qualifiers = ...)`, on API 33
-because that is the Karoo 3's platform. Capturing more than a viewport tall does not work here:
+The render is 480x800 at 280 dpi, set by `@Config(qualifiers = ...)`, on API 33. The Karoo in hand
+reports the same size at 300 dpi and API 32, so its viewport is a little narrower and its platform
+older than the committed images assume. Capturing more than a viewport tall does not work here:
 Robolectric paints only a window-sized band, so the lower half of the screen is a separate scrolled
 capture. `@GraphicsMode(NATIVE)` is what makes the rendering work at all.
 

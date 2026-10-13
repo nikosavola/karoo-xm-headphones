@@ -6,8 +6,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Both branches of the permission choice are devices this client runs on: Karoo 2 is Android 8 and
- * Karoo 3 is Android 13, and the two need different permissions to see a scan result at all.
+ * Both branches of the permission choice matter: the Karoo in hand reports API 32 and takes the
+ * Bluetooth pair, and the platforms below Android 12, which the extension still ships for, need
+ * location to see a scan result at all.
  */
 class RequiredPermissionsTest {
     @Test

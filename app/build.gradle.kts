@@ -10,7 +10,7 @@ android {
 
   defaultConfig {
     applicationId = "fi.nikosavola.karoo.xmheadphones"
-    // Karoo 2 runs Android 8 (API 26); Karoo 3 runs Android 13 (API 33).
+    // The oldest platform the extension is meant to run on; the Karoo in hand reports API 32.
     minSdk = 26
     targetSdk = 37
     versionCode = 1

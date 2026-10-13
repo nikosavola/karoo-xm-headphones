@@ -24,9 +24,8 @@ preset, the headset's model and firmware, and forgetting the headset so a differ
 | ------------- | ------------------------- | ---------------- | --------- | ---------------- | ---------------------- |
 | <img src="docs/screenshots/control-ambient.webp" width="140" alt="Ambient mode with the level slider and focus on voice"> | <img src="docs/screenshots/control-ambient-lower.webp" width="140" alt="Equalizer presets and forgetting the headset"> | <img src="docs/screenshots/control-cancelling.webp" width="140" alt="Noise cancelling selected"> | <img src="docs/screenshots/control-searching.webp" width="140" alt="Looking for a headset"> | <img src="docs/screenshots/control-unsupported.webp" width="140" alt="A headset that offers neither noise control nor equalizer presets"> | <img src="docs/screenshots/control-permission.webp" width="140" alt="Asking for the Bluetooth permission"> |
 
-These are the real composables, drawn at the Karoo 3's 480x800 with values such a headset would
-report, not drawings of the screen. The states are set directly because no headset was available to
-reach them.
+These are the real composables, drawn at 480x800 with values such a headset would report, not
+drawings of the screen. The states are set directly because no headset was available to reach them.
 
 Each test checks the screen before it captures it: the texts it has to show, and, in the states
 that have them, that the level slider and the focus switch are there at all, which mode chip reads
@@ -34,10 +33,13 @@ as selected, and that no chip has been squeezed narrow enough to wrap its label.
 of this file asserted only that the texts were present, and published a screen whose chips had been
 crushed to one letter per line.
 
-The screen's content is about 695dp against the Karoo 3's 457dp of viewport, so it scrolls; the
-second image is that same state scrolled to the bottom. The ride-page fields are not pictured:
-Karoo draws those itself from the text and numbers the extension streams, and every image here is
-of the settings screen.
+The images are drawn at 280 dpi, the figure they were recorded at. The Karoo this was checked on
+reports the same 480x800 at 300 dpi, so its viewport is a little narrower than an image shows.
+
+The screen's content is about 695dp against the 457dp of viewport the images are drawn at, so it
+scrolls; the second image is that same state scrolled to the bottom. The ride-page fields are not
+pictured: Karoo draws those itself from the text and numbers the extension streams, and every image
+here is of the settings screen.
 
 The tests draw these into `app/build/screenshots`, never over the committed copies, so a test run
 leaves the tree clean whatever the machine rasterizes like. Redrawing the images above is a
@@ -103,8 +105,8 @@ fails to initialise one of AGP's tasks, so `:client:bundleReleaseAar` and anythi
 
 ## What has and has not been checked against real hardware
 
-**Nothing here has been run against a real headset.** No device was available while it was written,
-which shapes what follows.
+**Nothing here has been run against a real headset.** None was in range for any of the checks below,
+which is what shapes them.
 
 Checked against hardware, via the packet captures committed to
 [mos9527/SonyHeadphonesClient](https://github.com/mos9527/SonyHeadphonesClient):
@@ -114,11 +116,21 @@ Checked against hardware, via the packet captures committed to
 - the V1 handshake replies and the V1 noise-control and battery reports decode to the states that
   headset was actually in.
 
-The APK has been installed and launched on an API 31 emulator configured as a Karoo 3, 480x800 at
-280 dpi, which is the size the screenshots above use. It starts, asks for the Bluetooth permission it
-needs, reads the adapter state, and with the adapter up it scans and settles on Searching. No headset
-has been near it, and an emulator is not a Karoo: that run says the app installs and runs, nothing
-about the protocol.
+Checked on a real Karoo, which reports Android 12 (API 32), 480x800 at 300 dpi, product `k24`:
+
+- the APK installs and runs, and takes the Android 12 permission branch: with the grant withheld it
+  reports the state that asks for one, and once granted it starts scanning;
+- Karoo System discovers the extension, binds the service and hands it the active ride profile, and
+  the extension asks for the Bluetooth radio;
+- the field picker in the Karoo's data page editor lists "XM Headphones" with Headset Battery, Noise
+  Cancelling and Ambient Level under it, each with the description and preview value from
+  `extension_info.xml`, and selecting one places it on the page;
+- the control screen draws at that size with none of its text clipped.
+
+Nothing in that run reached a headset. A scan filtered on the control service returns nothing, so the
+client sits in Searching, while an unfiltered sweep of the same spot sees about seventy devices and
+none of them advertises `5b833e20`; the headset bonded to the Karoo, a WF-1000XM5, was not
+advertising at all.
 
 Not checked:
 

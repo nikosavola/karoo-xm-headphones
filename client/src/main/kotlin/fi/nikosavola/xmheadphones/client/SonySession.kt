@@ -170,8 +170,8 @@ internal class SonySession(
             }
 
             // Both variants are overridden because which one runs depends on the platform: API 33
-            // and up call this one with the value, and older releases, Karoo 2 among them, call the
-            // one below it and leave the value on the characteristic.
+            // and up call this one with the value, and older releases, which is what the Karoo in
+            // hand runs, call the one below it and leave the value on the characteristic.
             override fun onCharacteristicChanged(
                 gatt: BluetoothGatt,
                 characteristic: BluetoothGattCharacteristic,

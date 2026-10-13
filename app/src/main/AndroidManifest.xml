@@ -2,7 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Karoo 2 (Android 8): legacy Bluetooth permissions, and location is required to get scan results -->
+    <!-- Before Android 12 a scan result needs location, and the radio needs the two install-time
+         permissions. The Karoo in hand reports API 32 and drops all three from its manifest, so this
+         is the branch only units on an older platform take. -->
     <uses-permission
         android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30" />
@@ -12,7 +14,7 @@
     <uses-permission
         android:name="android.permission.ACCESS_FINE_LOCATION"
         android:maxSdkVersion="30" />
-    <!-- Karoo 3 (Android 13) -->
+    <!-- Android 12 onwards, which is what the Karoo runs now -->
     <uses-permission
         android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation"

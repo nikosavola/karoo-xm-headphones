@@ -141,7 +141,7 @@ private fun NoiseControlSection(
             setNoiseCancelling(next)
         }
 
-        // FlowRow, not Row: three chips do not fit across the Karoo 3's 274dp, and a Row squeezes
+        // FlowRow, not Row: three chips do not fit across the Karoo's viewport, and a Row squeezes
         // the last one instead of moving it down, which wraps its label to one letter per line.
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),

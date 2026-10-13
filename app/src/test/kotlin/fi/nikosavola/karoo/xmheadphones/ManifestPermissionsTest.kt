@@ -26,13 +26,13 @@ import org.robolectric.annotation.Config
 class ManifestPermissionsTest {
     @Test
     @Config(sdk = [Build.VERSION_CODES.O])
-    fun `Karoo 2 is asked only for permissions it declares`() {
+    fun `an Android 8 device is asked only for permissions the manifest declares`() {
         assertDeclared(XmHeadphonesClient.requiredPermissions(Build.VERSION_CODES.O))
     }
 
     @Test
     @Config(sdk = [Build.VERSION_CODES.TIRAMISU])
-    fun `Karoo 3 is asked only for permissions it declares`() {
+    fun `an Android 13 device is asked only for permissions the manifest declares`() {
         assertDeclared(XmHeadphonesClient.requiredPermissions(Build.VERSION_CODES.TIRAMISU))
     }
 

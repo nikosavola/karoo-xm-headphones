@@ -54,8 +54,9 @@ import org.robolectric.annotation.GraphicsMode
  * These are the real composables drawn with values such a headset would report, not drawings of the
  * screen; the states are set directly because no headset is available to reach them.
  *
- * The qualifiers are the Karoo 3's own 480x800 at 280 dpi, so an image is the viewport a rider sees.
- * The screen's content measures about 695dp against that 457dp, so it scrolls, and its lower half is
+ * The qualifiers are the 480x800 at 280 dpi the committed images were recorded at; the Karoo in hand
+ * reports the same size at 300 dpi, so its viewport is a little narrower than an image shows. The
+ * screen's content measures about 695dp against that 457dp, so it scrolls, and its lower half is
  * captured as its own image rather than left out.
  *
  * Each test checks what is on the screen before it captures: the texts it must show, and, where the
