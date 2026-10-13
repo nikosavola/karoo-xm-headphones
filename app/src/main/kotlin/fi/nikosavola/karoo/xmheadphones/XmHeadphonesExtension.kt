@@ -1,6 +1,7 @@
 package fi.nikosavola.karoo.xmheadphones
 
 import fi.nikosavola.xmheadphones.client.HeadphonesLink
+import fi.nikosavola.xmheadphones.client.RfcommTransport
 import fi.nikosavola.xmheadphones.client.XmHeadphonesClient
 import fi.nikosavola.xmheadphones.protocol.NoiseCancelling
 import io.hammerhead.karooext.KarooSystemService
@@ -22,20 +23,22 @@ import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
 /**
- * The extension Karoo binds to. Bound by the system for as long as the extension is installed.
+ * The extension Karoo binds to for as long as it is installed.
  *
- * The headset connection is not tied to this service being alive: it is held while the active ride
- * profile shows one of the fields, so a rider on a bike whose profile has no headphone field is not
- * carrying a scan around. A controller button assigned to the toggle action borrows the connection
- * for as long as it needs it.
+ * The headset link is held only while the active profile shows one of its fields, so a rider
+ * with no headphone field reaches no headset. The toggle action's button borrows a link just
+ * while it needs one.
  */
 class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
     private lateinit var karooSystem: KarooSystemService
     private lateinit var client: XmHeadphonesClient
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    /** Guarded by [setHoldingClient] and [releaseClient]: a profile event and teardown can race. */
-    private var holdsClient = false
+    /**
+     * [setHoldingClient] and [releaseClient] guard this against a racing teardown, but the bonus
+     * action reads it from a coroutine without either lock, so it has to be visible on its own.
+     */
+    @Volatile private var holdsClient = false
 
     override val types by lazy {
         listOf(
@@ -60,8 +63,7 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_N
     }
 
     /**
-     * A headset that drops mid-ride is worth saying out loud: the rider notices the silence, and
-     * otherwise cannot tell whether it is the headset or the music that stopped.
+     * The silence of a mid-ride drop hides whether the headset or the music stopped.
      */
     private suspend fun alertOnDisconnect() {
         var wasConnected = false
@@ -107,8 +109,8 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_N
     }
 
     /**
-     * A controller button. The rider may have assigned it on a profile that shows no headphone
-     * field, in which case nothing has asked for a connection yet, so this borrows one.
+     * With no headphone field on the profile, nothing has asked for a connection. This
+     * borrows one.
      */
     override fun onBonusAction(actionId: String) {
         if (actionId != ACTION_TOGGLE_NOISE_CANCELLING) return
@@ -134,8 +136,7 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_N
                     Timber.w("The headset did not acknowledge the noise cancelling change")
                 }
             } finally {
-                // The client lingers after the last hold is released, so a second press of the button
-                // does not pay for the connection again.
+                // The client lingers after the last hold, so a second press avoids reconnecting.
                 if (borrowed) client.stop()
             }
         }
@@ -163,22 +164,38 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_N
         /** Must match `actionId` in res/xml/extension_info.xml. */
         const val ACTION_TOGGLE_NOISE_CANCELLING = "toggle-noise-cancelling"
 
-        private const val BORROW_TIMEOUT_MS = 10_000L
+        /**
+         * How long a press waits for a link it had to borrow.
+         *
+         * Derived rather than chosen. A connect can take [RfcommTransport.worstCaseConnectMillis]
+         * before it gives up, and the finally block above stops the client, which cancels one still
+         * in flight. A shorter wait than that would kill the very attempt the press started, so
+         * every press on a slow headset would fail while the same wait from a ride profile worked.
+         */
+        internal val BORROW_TIMEOUT_MS: Long =
+            RfcommTransport.worstCaseConnectMillis + BORROW_SLACK_MS
+
+        /** Enough for the client to notice the link and settle the state it publishes. */
+        private const val BORROW_SLACK_MS = 3_000L
     }
 }
 
 /**
  * Whether a link is one a borrow can act on.
  *
- * [HeadphonesLink.Idle] is not: it is what the state says before a connection has even been asked
- * for, and the action reads it immediately after asking, so treating it as an answer would end the
- * first press of the button at once while later presses worked.
+ * [HeadphonesLink.Idle] is the pre-ask state, read right after the ask. Treating it as
+ * settled would kill the first press while later ones work.
  */
 internal fun HeadphonesLink.isSettled(): Boolean =
     when (this) {
         HeadphonesLink.Connected,
         HeadphonesLink.NoPermission,
-        HeadphonesLink.BluetoothOff -> true
+        HeadphonesLink.BluetoothOff,
+        // Nothing for a borrow to act on, and nothing worth holding the radio open for. This state
+        // can be a pairing poll stale, so a press made in that window, just after pairing a headset,
+        // is given up on rather than waited on. The other way round, every press with nothing paired
+        // would sit out the whole borrow timeout to do nothing.
+        HeadphonesLink.NoPairedHeadset -> true
         HeadphonesLink.Idle,
         HeadphonesLink.Searching,
         HeadphonesLink.Connecting -> false

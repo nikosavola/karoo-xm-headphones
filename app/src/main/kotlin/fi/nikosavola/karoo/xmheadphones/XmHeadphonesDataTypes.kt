@@ -41,8 +41,7 @@ import timber.log.Timber
 /**
  * The type ids the extension manifest declares.
  *
- * A mismatch registers a field Karoo draws with nothing behind it, which shows up as a field that
- * never leaves Searching, so the manifest and these constants have to agree.
+ * A mismatch registers a field that never leaves Searching. Keep the two in step.
  */
 internal object FieldIds {
     const val BATTERY = "battery"
@@ -51,8 +50,8 @@ internal object FieldIds {
 }
 
 /**
- * A field Karoo draws itself: the title from the extension manifest and one number. That is what
- * makes a battery or an ambient level look like a built-in field rather than an imitation.
+ * A field Karoo draws itself, manifest title plus one number. That is why a battery or ambient
+ * level looks built in.
  */
 internal abstract class NumericField(
     private val client: XmHeadphonesClient,
@@ -64,10 +63,8 @@ internal abstract class NumericField(
     /**
      * What the field has to show.
      *
-     * The difference between [Pending] and [Unavailable] is the whole reason this is not a nullable
-     * number: a headset that has not answered yet is worth waiting for, and one that will not answer
-     * is not, and Karoo shows "Searching" for the first and "unavailable" for the second. A field that
-     * cannot tell them apart searches for the whole ride.
+     * Karoo shows "Searching" for [Pending] and "unavailable" for [Unavailable]. A nullable
+     * number could not tell them apart and would search for the whole ride.
      */
     protected sealed interface Reading {
         @JvmInline value class Value(val value: Double) : Reading
@@ -100,6 +97,9 @@ internal abstract class NumericField(
         when {
             link == HeadphonesLink.Searching || link == HeadphonesLink.Connecting ->
                 StreamState.Searching
+            // Nothing paired, no permission and a radio that is off all read as nothing to show. Only
+            // a link that could still come up is worth a spinner on a ride page, and a rider who has
+            // yet to pair a headset would watch one turn for the whole ride.
             link != HeadphonesLink.Connected -> StreamState.NotAvailable
             else ->
                 when (val reading = reading(this)) {
@@ -116,12 +116,11 @@ internal abstract class NumericField(
 internal class BatteryDataType(client: XmHeadphonesClient, extension: String) :
     NumericField(client, extension, FieldIds.BATTERY) {
     override fun reading(state: XmHeadphonesState): Reading {
-        // Bound locally: the property is computed, so it cannot be smart cast.
+        // A computed property cannot be smart cast.
         val percent = state.batteryPercent
         return when {
             percent != null -> Reading.Value(percent.toDouble())
-            // Connected, so the handshake is done: a headset with no battery function is not going to
-            // report one however long this waits.
+            // The handshake is done, so a headset without a battery function never reports one.
             state.capabilities?.batteryShape == null -> Reading.Unavailable
             else -> Reading.Pending
         }
@@ -131,15 +130,15 @@ internal class BatteryDataType(client: XmHeadphonesClient, extension: String) :
 internal class AmbientLevelDataType(client: XmHeadphonesClient, extension: String) :
     NumericField(client, extension, FieldIds.AMBIENT_LEVEL) {
     override fun reading(state: XmHeadphonesState): Reading {
-        // Only ambient mode carries a level, so the level the rider last had stands in while noise
-        // cancelling or off is on, which is the level the slider will come back to.
+        // Only ambient mode carries a level, so the rider's last one stands in. The slider
+        // returns to it.
         val level =
             (state.noiseCancelling as? NoiseCancelling.Ambient)?.level ?: state.lastAmbientLevel
         return when {
             level != null -> Reading.Value(level.steps.toDouble())
             !state.supportsNoiseCancelling -> Reading.Unavailable
-            // Its noise control report arrived and carried no level, and it reports the level only
-            // while it is in ambient mode. Waiting for a later one would search for the whole ride.
+            // The report arrived without a level, and levels only arrive in ambient mode. Waiting
+            // longer searches the whole ride.
             state.noiseCancelling != null -> Reading.Unavailable
             else -> Reading.Pending
         }
@@ -147,8 +146,7 @@ internal class AmbientLevelDataType(client: XmHeadphonesClient, extension: Strin
 }
 
 /**
- * The noise control mode, which has no number to show: it is text, so the extension draws the field
- * instead of Karoo.
+ * The mode has no number to show, so the extension draws the text itself.
  */
 @OptIn(ExperimentalGlanceRemoteViewsApi::class)
 internal class NoiseCancellingDataType(
@@ -163,15 +161,14 @@ internal class NoiseCancellingDataType(
         val job =
             scope.launch {
                 client.state
-                    .map { labelOf(context, it) }
+                    .map { noiseCancellingLabel(context, it) }
                     .distinctUntilChanged()
                     .conflate()
                     .collect { label ->
                         emitter.updateView(compose(context, config, label).remoteViews)
-                        // The view emitter drops an update that lands within 900 ms of the last one
-                        // and never re-sends it, so renders are spaced past that. Conflation means a
-                        // change arriving in the meantime becomes the next render rather than being
-                        // lost, so nothing the rider changed goes unshown.
+                        // The emitter drops an update within 900 ms of the last and never re-sends
+                        // it, so renders are spaced past that. Conflation turns a mid-gap change
+                        // into the next render, so nothing is lost.
                         delay(MIN_RENDER_INTERVAL_MS)
                     }
             }
@@ -199,35 +196,40 @@ internal class NoiseCancellingDataType(
             }
         }
 
-    private fun labelOf(context: Context, state: XmHeadphonesState): String {
-        // Bound to a local: the property comes from another module, so it cannot be smart cast.
-        val noiseCancelling = state.noiseCancelling
-        return when {
-            state.link == HeadphonesLink.NoPermission ->
-                context.getString(R.string.state_no_permission)
-            state.link == HeadphonesLink.BluetoothOff ->
-                context.getString(R.string.state_bluetooth_off)
-            state.link != HeadphonesLink.Connected -> context.getString(R.string.state_searching)
-            noiseCancelling is NoiseCancelling.Cancelling ->
-                context.getString(R.string.nc_noise_cancelling)
-            noiseCancelling is NoiseCancelling.Ambient ->
-                if (noiseCancelling.focusOnVoice) {
-                    context.getString(R.string.nc_ambient_voice)
-                } else {
-                    context.getString(R.string.nc_ambient)
-                }
-            noiseCancelling is NoiseCancelling.Off -> context.getString(R.string.nc_off)
-            // Connected, but the headset does not offer noise control at all.
-            else -> context.getString(R.string.state_unsupported)
-        }
-    }
-
     private companion object {
         const val MIN_RENDER_INTERVAL_MS = 1_000L
     }
 }
 
-/** The wire ids of every field this extension declares, for matching against a ride profile. */
+/**
+ * What a ride screen writes in the noise cancelling field.
+ *
+ * A headset that offers noise control but has not reported a mode yet is not the same as one that
+ * never offers it, and neither is one whose link is still coming up.
+ */
+internal fun noiseCancellingLabel(context: Context, state: XmHeadphonesState): String {
+    // A property from another module cannot be smart cast.
+    val noiseCancelling = state.noiseCancelling
+    return when {
+        state.link == HeadphonesLink.NoPermission -> context.getString(R.string.state_no_permission)
+        state.link == HeadphonesLink.BluetoothOff -> context.getString(R.string.state_bluetooth_off)
+        state.link == HeadphonesLink.NoPairedHeadset -> context.getString(R.string.state_no_headset)
+        state.link != HeadphonesLink.Connected -> context.getString(R.string.state_searching)
+        noiseCancelling is NoiseCancelling.Cancelling ->
+            context.getString(R.string.nc_noise_cancelling)
+        noiseCancelling is NoiseCancelling.Ambient ->
+            if (noiseCancelling.focusOnVoice) {
+                context.getString(R.string.nc_ambient_voice)
+            } else {
+                context.getString(R.string.nc_ambient)
+            }
+        noiseCancelling is NoiseCancelling.Off -> context.getString(R.string.nc_off)
+        state.supportsNoiseCancelling -> context.getString(R.string.state_unknown)
+        else -> context.getString(R.string.state_unsupported)
+    }
+}
+
+/** Wire ids of every declared field, for ride-profile matching. */
 internal fun dataTypeIdsOf(extension: String): List<String> =
     listOf(FieldIds.BATTERY, FieldIds.NOISE_CANCELLING, FieldIds.AMBIENT_LEVEL).map {
         DataType.dataTypeId(extension, it)

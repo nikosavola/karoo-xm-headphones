@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- What Compose draws over, and what the window and the system splash are told to use, so a
+         launch does not flash a different colour before the screen is up. The Compose palette reads
+         this one back rather than repeating it. -->
+    <color name="app_background">#121212</color>
+
+    <!-- The amber the palette accents with, and the ground the launcher icon's glyph sits on. -->
+    <color name="launcher_background">#FFC61A</color>
+
     <!-- In-ride alert colours, which Karoo reads from the dispatching app's resources. -->
     <color name="alert_background">#1B1B1B</color>
     <color name="alert_text">#FFFFFF</color>

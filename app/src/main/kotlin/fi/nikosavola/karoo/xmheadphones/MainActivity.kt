@@ -6,7 +6,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.core.content.ContextCompat
@@ -17,8 +16,7 @@ import kotlinx.coroutines.launch
 /**
  * Hosts [ControlScreen] and wires it to the headset connection.
  *
- * Nothing about the screen's appearance lives here: it is kept to permissions, the client's
- * lifetime, and the callbacks that carry a command out.
+ * Permissions, the client's lifetime, and the outgoing callbacks. Nothing about appearance.
  */
 class MainActivity : ComponentActivity() {
     private val client by lazy { XmHeadphonesClient.get(this) }
@@ -29,7 +27,7 @@ class MainActivity : ComponentActivity() {
             registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
 
         setContent {
-            MaterialTheme {
+            XmHeadphonesTheme {
                 val state by client.state.collectAsStateWithLifecycle()
                 val scope = rememberCoroutineScope()
                 ControlScreen(
@@ -50,8 +48,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // The client is reference counted, so holding one here while the screen is open is enough; the
-    // link lingers afterwards rather than being torn down the moment the rider leaves the screen.
+    // Reference counted, so one hold for the screen's lifetime is enough. The link lingers
+    // after the rider leaves.
     override fun onStart() {
         super.onStart()
         client.start()
@@ -62,9 +60,9 @@ class MainActivity : ComponentActivity() {
         client.stop()
     }
 
-    // The list comes from the client rather than being written out again here: the client is what
-    // refuses to scan, so a second copy that drifted would leave the button asking for something the
-    // scan does not accept, and the state stuck on "permission is needed" with nothing left to grant.
+    // The client owns this list, since it is what refuses to work without it. A drifted copy
+    // would ask for something the client cannot use, leaving "permission is needed" with nothing
+    // to grant.
     private fun missingPermissions(): Array<String> =
         XmHeadphonesClient.requiredPermissions()
             .filter {

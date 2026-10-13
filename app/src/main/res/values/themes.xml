@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.XmHeadphones" parent="android:Theme.DeviceDefault" />
+    <!--
+      The platform's own theme rather than an AppCompat or Material Components one: this app draws
+      everything with Compose and depends on neither library.
+
+      No action bar. The framework would otherwise put the activity label in a title bar above the
+      screen, which draws its own headline, and the rider would read the same name twice.
+
+      The window background is the colour Compose draws over, which is also what the system splash
+      shows on Android 12 and up. Left at the platform default a launch flashes a lighter grey first.
+    -->
+    <style name="Theme.XmHeadphones" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/app_background</item>
+    </style>
 </resources>
