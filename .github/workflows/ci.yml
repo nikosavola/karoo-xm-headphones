@@ -28,7 +28,13 @@ jobs:
           # Matching the pin in gradle/gradle-daemon-jvm.properties leaves the toolchain resolver
           # with nothing to download.
           java-version: '21'
-      - uses: android-actions/setup-android@v3
+      # v4 rather than v3. v3 asks sdkmanager for the legacy `tools` package, which Google no longer
+      # publishes, so it fails before the build starts: every run of this workflow has died there.
+      # v4 asks for platform-tools, which is still there, and pins node24.
+      #
+      # Nothing else is named on purpose. Gradle downloads the platform and build tools the modules
+      # ask for, and the runner image has their licences accepted already.
+      - uses: android-actions/setup-android@v4
       - uses: gradle/actions/setup-gradle@v4
       # `check` and not just `test`: the library modules' lint gate is part of it, and a lint
       # failure there has no other way of showing up (the app still builds and the tests still pass).
