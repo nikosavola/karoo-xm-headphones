@@ -125,8 +125,7 @@ Not checked:
 - **Everything in the write direction.** The set frames are built from the payload definitions in
   that project, field for field, but no capture of a headset being told to change mode was available.
 - **The V2 layouts** (WH-1000XM5, WF-1000XM4/XM5, WH-CH720N and the rest). They come from the same
-  generated headers, cross-checked against Mercury000/SonyPods, which read them out of the Sound
-  Connect app.
+  generated headers, which were read out of the Sound Connect app.
 - **The places the two generations disagree**, which the generated headers do spell out and the tests
   pin, but no device has confirmed: the equalizer lives in slot `0x01` on V1 and `0x00` on V2, where
   V1's slot is V2's Clear Bass; V1 marks its noise cancelling slot separately while V2 carries the
@@ -135,11 +134,12 @@ Not checked:
 - **Earbuds**, which report a level per bud and sometimes without a charging byte at all. Both forms
   are parsed and the lower bud is what a ride screen shows, but no pair of earbuds has been tried.
 - **Whether V1 headsets answer on BLE at all.** On a desktop they are driven over the classic serial
-  profile. Their BLE channel is the third service `SonyGatt` lists, and no reference implementation
-  has confirmed that a V1 headset answers there. If the extension connects to an XM3 or XM4 but never
-  gets a handshake, that is the first thing to look at.
-- **Whether every model advertises the same GATT table.** The UUIDs are Sony's, taken from the
-  SongPal app by two independent projects, but only the two services this client uses are tried.
+  profile, which is the only transport any reference implementation demonstrates for them. This
+  client looks for Sony's BLE control service, so if an XM3 or XM4 connects but never gets a
+  handshake, that is the first thing to look at.
+- **Whether every model advertises the same GATT table.** The UUIDs are SongPal's own, recorded by an
+  independent project, and a headset that answers on them is what this client assumes. Only the one
+  service it speaks is tried.
 
 The code fails closed at every point where this matters: a headset that does not answer is reported as
 such rather than guessed at, and a reply that does not fit its shape is logged in debug builds (which
@@ -147,13 +147,11 @@ plant a Timber tree) and acknowledged rather than acted on.
 
 ## Credits
 
-The protocol was worked out from these projects, none of which is Sony's:
+The protocol was worked out from these projects, none of which is Sony's, and each of which is
+permissively licensed:
 
 - [mos9527/SonyHeadphonesClient](https://github.com/mos9527/SonyHeadphonesClient) — the payload
-  definitions and the packet captures the tests replay
-- [Mercury000/SonyPods](https://github.com/Mercury000/SonyPods) — a byte-level audit of the Sound
-  Connect app, and the GATT table
-- [marconvcm/sony-device-center](https://github.com/marconvcm/sony-device-center)
+  definitions, the GATT table and the packet captures the tests replay
 - [AmitRajput-Dev/SonyBridge](https://github.com/AmitRajput-Dev/SonyBridge)
 - [VyomJain6904/sony-headphones-linux](https://github.com/VyomJain6904/sony-headphones-linux)
 
