@@ -288,10 +288,24 @@ public class XmHeadphonesClient private constructor(private val context: Context
             object : ScanCallback() {
                 override fun onScanResult(callbackType: Int, result: ScanResult) {
                     if (!continuation.isActive) return
-                    Timber.i(
-                        "Found ${result.device.address} " +
-                            "rssi=${result.rssi} name=${result.scanRecord?.deviceName}",
-                    )
+                    // Diagnostics only: reading the address and the name needs BLUETOOTH_CONNECT, and a
+                    // rider who revokes it mid-scan must not take the scan thread down with the log
+                    // line. A result only reaches here having matched the filter, so this is the one
+                    // place a mismatch between the filter and the device shows up.
+                    runCatching {
+                        val record = result.scanRecord
+                        val manufacturers =
+                            record?.manufacturerSpecificData?.let { data ->
+                                (0 until data.size()).map { data.keyAt(it) }
+                            }
+                        Timber.i(
+                            "Found ${result.device.address} " +
+                                "rssi=${result.rssi} name=${result.device.name} " +
+                                "advertised=${record?.deviceName} " +
+                                "services=${record?.serviceUuids?.map { it.uuid }} " +
+                                "manufacturers=$manufacturers",
+                        )
+                    }
                     runCatching { scanner.stopScan(this) }
                     continuation.resume(result.device)
                 }
