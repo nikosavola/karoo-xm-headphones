@@ -82,6 +82,13 @@ client.setNoiseCancelling(NoiseCancelling.Ambient(level, focusOnVoice = false))
 Every command returns false rather than throwing when there is no link, or when the headset never
 advertised the feature, so a caller that is merely early does not have to handle an exception.
 
+A caller has to hold the right permissions before anything is scanned, and they differ by platform:
+`XmHeadphonesClient.requiredPermissions()` returns the set to ask for on the device, and each name
+has to be declared in the caller's own manifest. Below Android 12 that also means the install-time
+`BLUETOOTH` and `BLUETOOTH_ADMIN`, which are granted at install and so are not in the list. A request
+for a permission that is not declared is ignored without an error, which is a screen saying a
+permission is needed with nothing that can grant it.
+
 ## Building
 
 ```sh

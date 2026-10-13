@@ -1,8 +1,6 @@
 package fi.nikosavola.karoo.xmheadphones
 
-import android.Manifest
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -64,16 +62,13 @@ class MainActivity : ComponentActivity() {
         client.stop()
     }
 
-    private fun missingPermissions(): Array<String> {
-        val needed =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
-            } else {
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+    // The list comes from the client rather than being written out again here: the client is what
+    // refuses to scan, so a second copy that drifted would leave the button asking for something the
+    // scan does not accept, and the state stuck on "permission is needed" with nothing left to grant.
+    private fun missingPermissions(): Array<String> =
+        XmHeadphonesClient.requiredPermissions()
+            .filter {
+                ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
             }
-        return needed.filter {
-            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-        }
             .toTypedArray()
-    }
 }

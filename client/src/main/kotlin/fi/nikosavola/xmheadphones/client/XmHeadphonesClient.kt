@@ -246,11 +246,10 @@ public class XmHeadphonesClient private constructor(private val context: Context
         _state.update { it.copy(link = link) }
     }
 
-    private fun hasPermissions(): Boolean {
-        val needed =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PERMISSIONS_S else PERMISSIONS_LEGACY
-        return needed.all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
-    }
+    private fun hasPermissions(): Boolean =
+        requiredPermissions().all {
+            context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED
+        }
 
     // region scanning
 
@@ -319,12 +318,34 @@ public class XmHeadphonesClient private constructor(private val context: Context
         private const val STOP_LINGER_MS = 120_000L
         private const val SCAN_RESTART_MS = 10 * 60_000L
 
-        // The permission names are compile-time String constants, so naming them below API 31 costs
-        // nothing at runtime; lint sees the fields they come from and cannot tell.
+        /**
+         * The permissions a scan needs on [sdkInt], which a caller has to hold before [start] does
+         * anything useful.
+         *
+         * Android 12 put BLE behind its own pair; before that, a scan result required location
+         * instead. Karoo 2 runs Android 8, so the second branch is a device this client is meant to
+         * run on rather than a leftover.
+         *
+         * This is public because a caller that keeps its own copy of the list can drift from it, and
+         * the symptom is a rider stuck on a permission prompt that never satisfies the scan. Each
+         * name also has to be declared in the caller's manifest; requesting one that is not is
+         * ignored, silently.
+         *
+         * The list is what has to be asked for; it is not everything a scan needs. Below Android 12
+         * the platform also wants the install-time `BLUETOOTH` and `BLUETOOTH_ADMIN` declared, and a
+         * scan without them throws rather than reporting the state this class has for it. They are
+         * absent here because they are granted at install, so there is no prompt to show for them and
+         * nothing to ask the rider.
+         */
+        // The names are compile-time String constants, so naming them below API 31 costs nothing at
+        // runtime; lint sees the fields they come from and cannot tell.
         @SuppressLint("InlinedApi")
-        private val PERMISSIONS_S =
-            arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
-        private val PERMISSIONS_LEGACY = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        public fun requiredPermissions(sdkInt: Int = Build.VERSION.SDK_INT): List<String> =
+            if (sdkInt >= Build.VERSION_CODES.S) {
+                listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+            } else {
+                listOf(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
 
         // The application context, not an activity's: this is the process-wide client, and its
         // lifetime is the process's by design.

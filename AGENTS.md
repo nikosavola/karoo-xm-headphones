@@ -18,6 +18,10 @@ and client libraries behind it.
 - `client` exposes its public API deliberately: it is consumed outside this repo.
 - Never add Android-only types to `protocol` to make a caller simpler; put the Android-specific
   part in `client`.
+- `client` owns the list of permissions a scan needs (`requiredPermissions`); a caller requests from
+  it rather than keeping its own copy, because a copy that drifts leaves the UI asking for something
+  the scan does not accept. `ManifestPermissionsTest` pins the app's manifest to that list at both
+  API levels the extension supports.
 - The extension id (`xm-headphones`) is baked into `AndroidManifest.xml`,
   `res/xml/extension_info.xml` and `XmHeadphonesExtension.EXTENSION_ID`. Keep them in sync; the
   data type ids in `extension_info.xml` must match the constants in `XmHeadphonesDataType`.
