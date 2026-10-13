@@ -1,6 +1,6 @@
 package fi.nikosavola.xmheadphones.protocol
 
-/** A command set a device wants enabled. V1 has table 1 only; a V2 device may offer both. */
+/** A command set a device wants enabled. V1 has table 1 only. A V2 device may offer both. */
 public enum class ProtocolTable {
     Table1,
     Table2,
@@ -9,12 +9,12 @@ public enum class ProtocolTable {
 /**
  * Something a headset sent us, understood as far as this client takes it.
  *
- * The device answers a request and acknowledges it in whichever order it likes; a V1 headset in the
- * committed WH-1000XM3 capture lands the reply first every single time, so a session has to match
- * [Acknowledged] by sequence number rather than by position.
+ * The device answers and acknowledges a request in whichever order it likes. The V1 headset in the
+ * committed WH-1000XM3 capture always lands the reply first, so a session matches [Acknowledged] by
+ * sequence number, not position.
  */
 public sealed interface SonyResponse {
-    /** The device accepted a frame we sent; [sequence] is the one it is answering. */
+    /** The device accepted a frame we sent. [sequence] is the one it is answering. */
     public data class Acknowledged(public val sequence: Int) : SonyResponse
 
     public data class ProtocolInfo(
@@ -33,9 +33,9 @@ public sealed interface SonyResponse {
     public data class Battery(public val reading: BatteryReading) : SonyResponse
 
     /**
-     * [settled] is false while the device is still moving to the value it was given, which it reports
-     * while an ambient slider is being dragged. This client reports it rather than waiting on it: a
-     * write is confirmed by the acknowledgement, and the state that follows arrives as a notification.
+     * [settled] is false while the device is still moving to the value it was given, which it
+     * reports while an ambient slider is being dragged. This client reports it rather than waits.
+     * The acknowledgement confirms the write, and the new state follows as a notification.
      */
     public data class NoiseControl(
         public val state: NoiseCancelling,

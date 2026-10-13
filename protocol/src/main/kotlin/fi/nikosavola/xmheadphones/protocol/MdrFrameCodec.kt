@@ -3,14 +3,14 @@ package fi.nikosavola.xmheadphones.protocol
 /**
  * The MDR wire framing.
  *
- * A packet is a start marker, an escaped body, and an end marker. The body is
- * `type(1) sequence(1) length(4, big endian) payload(length) checksum(1)`, where the checksum is the
- * byte sum of everything before it in the body. Escaping applies to the body as a whole, checksum
- * included, and only to the three bytes that would otherwise be mistaken for a marker:
- * `0x3C`, `0x3D` and `0x3E` become `0x3D` followed by themselves minus `0x10`.
+ * A packet is a start marker, an escaped body, an end marker. The body is
+ * `type(1) sequence(1) length(4, big endian) payload(length) checksum(1)`, its checksum the byte sum
+ * of everything before it. Escaping covers the whole body, checksum included, and only the bytes
+ * `0x3C`, `0x3D` and `0x3E`, the ones that could be mistaken for a marker. Each becomes `0x3D`
+ * followed by itself minus `0x10`.
  *
- * The layout is the one libmdr implements (`libmdr/src/Command.cpp`, `MDRPackCommand`); every packet
- * of the committed WH-1000XM3 capture round-trips through this codec.
+ * libmdr implements this layout in `libmdr/src/Command.cpp`, `MDRPackCommand`. Every packet of the
+ * committed WH-1000XM3 capture round-trips through it.
  */
 public object MdrFrameCodec {
     public const val START_MARKER: Int = 0x3E
@@ -23,8 +23,17 @@ public object MdrFrameCodec {
 
     private const val HEADER_BYTES = 6
 
-    /** The protocol carries no more than this in one packet; libmdr chunks above it. */
+    /** Nothing bigger travels in one packet. libmdr chunks above it. */
     public const val MAX_PAYLOAD_BYTES: Int = 2048
+
+    /**
+     * An upper bound on what a legal frame takes up on the wire, escaping included.
+     *
+     * Every byte of a body can need escaping, which doubles it, and the two markers sit outside. No
+     * frame this encoder produces is longer. A reader that keeps less than this can be handed a frame
+     * it is allowed to produce and have to throw it away as if it were noise.
+     */
+    public const val MAX_FRAME_BYTES: Int = 2 * (HEADER_BYTES + MAX_PAYLOAD_BYTES + 1) + 2
 
     /** Wrap [frame] for the wire, markers included. */
     public fun encode(frame: MdrFrame): ByteArray {
@@ -47,8 +56,8 @@ public object MdrFrameCodec {
     }
 
     /**
-     * Parse exactly one packet. [bytes] is either a whole packet or a prefix of one, so a truncated
-     * read is [MdrDecodeResult.Incomplete] rather than an error.
+     * Parse exactly one packet. [bytes] is a whole packet or a prefix of one, so a truncated read is
+     * [MdrDecodeResult.Incomplete] rather than an error.
      */
     public fun decode(bytes: ByteArray): MdrDecodeResult {
         if (bytes.size < 2) return MdrDecodeResult.Incomplete
@@ -56,8 +65,10 @@ public object MdrFrameCodec {
         if (bytes[bytes.lastIndex].toInt() and 0xFF != END_MARKER) return MdrDecodeResult.Incomplete
 
         val body = unescape(bytes, 1, bytes.lastIndex) ?: return MdrDecodeResult.BadEscape
-        // type, sequence, four length bytes, and a checksum.
-        if (body.size < HEADER_BYTES + 1) return MdrDecodeResult.Incomplete
+        // With the end marker present this is a whole packet however short. A body too small for
+        // header and checksum is malformed, not a prefix still to come. Escaping keeps a literal end
+        // marker out of a body, so one in the stream always ends a packet.
+        if (body.size < HEADER_BYTES + 1) return MdrDecodeResult.BadLength
 
         val type = MdrDataType.fromWire(body[0].toInt() and 0xFF) ?: return MdrDecodeResult.BadMarker
         val sequence = body[1].toInt() and 0xFF

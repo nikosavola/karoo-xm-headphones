@@ -3,9 +3,8 @@ package fi.nikosavola.xmheadphones.protocol
 /**
  * The `type` byte of an MDR packet.
  *
- * A headset session only ever exchanges [DataMdr] and [Ack] on table 1, and [DataMdrNo2] on table 2.
- * The rest of the table is kept so a packet we did not expect is named in a log line instead of
- * showing up as a bare number.
+ * A headset session exchanges only [DataMdr] and [Ack] on table 1, [DataMdrNo2] on table 2. The rest
+ * of the table stays so an unexpected packet gets a name in a log line, not a bare number.
  */
 public enum class MdrDataType(public val wire: Int) {
     Data(0x00),
@@ -27,7 +26,7 @@ public enum class MdrDataType(public val wire: Int) {
     ;
 
     public companion object {
-        /** Null for a type byte outside the table, which the caller reports rather than guesses. */
+        /** Null for a type byte outside the table, for the caller to report rather than guess. */
         public fun fromWire(wire: Int): MdrDataType? = entries.firstOrNull { it.wire == wire }
     }
 }

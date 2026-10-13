@@ -6,10 +6,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * The three states a rider picks between have to survive a trip out to the device and back, in every
- * dialect. A write and the device's own report of the same state do not have to look identical: a
- * headset reports which parameters it has, while a write states the value it wants, so the tests
- * assert on the decoded state rather than on byte equality with a capture.
+ * The three rider states must survive a round trip through the device, in every dialect. A write and
+ * the device's report of the same state do not have to match. The headset reports which parameters it
+ * has, while a write states the value wanted, so the tests assert on the decoded state, never on
+ * captured bytes.
  */
 class NcAsmParamCodecTest {
 
@@ -86,9 +86,31 @@ class NcAsmParamCodecTest {
     }
 
     @Test
+    fun `a sensitivity byte this client cannot name survives being echoed back`() {
+        // A value outside the three the protocol documents would otherwise be rewritten to Standard
+        // on the next noise control change. That reset is what these fields exist to avoid.
+        val reported = report(hex("691901010000030105")).adaptive
+
+        assertEquals(
+            NoiseAdaptiveFields(
+                autoAmbient = true,
+                sensitivity = NoiseAdaptiveSensitivity.Standard,
+                unknownSensitivity = 5,
+            ),
+            reported,
+        )
+
+        val echoed =
+            SonyRequest.SetNoiseControl(NoiseCancelling.Cancelling, preservedAdaptive = reported!!)
+                .payload(capabilities(NcAsmDialect.V2NoiseAdaptive))
+
+        assertContentEquals(hex("681901010000000105"), echoed)
+    }
+
+    @Test
     fun `switching off on V2 keeps the ambient level the device was given`() {
-        // A V2 headset reports the level whether or not noise control is on, and takes whatever it
-        // is told, so sending zero here would throw away the rider's setting.
+        // A V2 headset reports the level whether noise control is on or not, and takes what it is
+        // told. Sending zero here would throw away the rider's setting.
         val payload =
             SonyRequest.SetNoiseControl(
                 NoiseCancelling.Off,
@@ -156,12 +178,14 @@ class NcAsmParamCodecTest {
                     NcAsmDialect.V2 -> setOf(0x6B)
                     NcAsmDialect.V2NoiseAdaptive -> setOf(0x6D)
                 },
+            // Nothing here reads the tables, which is why it is the same for both versions.
+            tables = setOf(ProtocolTable.Table1),
         )
 
     /**
-     * A write and the device's report of the same state share one field layout per dialect, and differ
-     * only in the command byte, so a write can be read back by relabelling it as the notification the
-     * device would send. Anything else would test a layout the device never produces.
+     * A write and the device's report of the same state share one field layout per dialect. They
+     * differ only in the command byte, so a write can be read back by relabelling it as the device's
+     * notification. Any other trick would test a layout the device never produces.
      */
     private fun asDeviceReport(setPayload: ByteArray): ByteArray =
         setPayload.copyOf().also { it[0] = NTFY_PARAM }

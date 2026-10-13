@@ -1,10 +1,10 @@
 package fi.nikosavola.xmheadphones.protocol
 
 /**
- * One MDR packet: the start and end markers stripped, the body unescaped, the checksum verified.
+ * One MDR packet, markers stripped, body unescaped, checksum verified.
  *
- * [sequence] is the byte the device echoes back in the matching [MdrDataType.Ack], which is the only
- * way to tell replies to two requests apart.
+ * Replies to two requests are told apart through [sequence]. The matching [MdrDataType.Ack] carries
+ * the other value of the two-value sequence space, not this one.
  */
 public class MdrFrame(
     public val type: MdrDataType,
@@ -15,7 +15,7 @@ public class MdrFrame(
         require(sequence in 0..0xFF) { "sequence is one byte, was $sequence" }
     }
 
-    // ByteArray identity would make two identical frames unequal, which reads as a bug everywhere
+    // ByteArray identity would call two identical frames unequal, which reads as a bug everywhere
     // this is compared.
     override fun equals(other: Any?): Boolean =
         this === other ||
@@ -33,7 +33,7 @@ public class MdrFrame(
 public sealed interface MdrDecodeResult {
     public data class Decoded(public val frame: MdrFrame) : MdrDecodeResult
 
-    /** Shorter than the markers and header require; more bytes may follow. */
+    /** Shorter than the markers and header require. More bytes may follow. */
     public data object Incomplete : MdrDecodeResult
 
     /** Missing a marker, or the type byte is outside the table. */

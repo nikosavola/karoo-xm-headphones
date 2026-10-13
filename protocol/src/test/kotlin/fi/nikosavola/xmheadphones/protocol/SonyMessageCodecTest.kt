@@ -7,9 +7,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Every packet here was captured from a WH-1000XM3 on firmware 4.5.2 and is committed to
- * mos9527/SonyHeadphonesClient under `tests/WH-1000XM3-4.5.2/`, so the expected values are the
- * device's real answers rather than what this client happens to compute.
+ * Every packet here was captured from a WH-1000XM3 on firmware 4.5.2 and committed to
+ * mos9527/SonyHeadphonesClient under `tests/WH-1000XM3-4.5.2/`. The expected values are the device's
+ * real answers, not what this client happens to compute.
  */
 class SonyMessageCodecTest {
 
@@ -17,6 +17,7 @@ class SonyMessageCodecTest {
         SonyCapabilities(
             version = ProtocolVersion.V1,
             functionIds = XM3_FUNCTIONS,
+            tables = setOf(ProtocolTable.Table1),
         )
 
     @Test
@@ -31,8 +32,8 @@ class SonyMessageCodecTest {
 
     @Test
     fun `a four byte version with table flags settles as V2 with both tables`() {
-        // The shape of libmdr's ConnectRetProtocolInfo: command, type, a four byte version, then one
-        // flag per command table, where 0x00 means enabled.
+        // The shape of libmdr's ConnectRetProtocolInfo. Command, type, a four byte version, then
+        // one flag per command table, where 0x00 means enabled.
         val frame =
             MdrFrameCodec.encode(
                 MdrFrame(
@@ -149,7 +150,7 @@ class SonyMessageCodecTest {
 
     @Test
     fun `the equalizer reply is read from the slot its generation uses`() {
-        // Captured from a WH-1000XM3: command, slot 0x01, preset off, six flat bands.
+        // Captured from a WH-1000XM3. Command, slot 0x01, preset off, six flat bands.
         val xm3 = "3e0c010000000a570100060a0a0a0a0a0ab13c"
 
         // On V1 that slot is the preset, and reading it as V2 would call it an unknown command.
@@ -187,14 +188,16 @@ class SonyMessageCodecTest {
         )
         assertContentEquals(
             byteArrayOf(0x56, 0x00),
-            SonyRequest.Equalizer.payload(SonyCapabilities(ProtocolVersion.V2, setOf(0x50))),
+            SonyRequest.Equalizer.payload(
+                SonyCapabilities(ProtocolVersion.V2, setOf(0x50), setOf(ProtocolTable.Table1))
+            ),
         )
     }
 
     @Test
     fun `a preset write carries the slot and no bands`() {
-        // A device sent a preset and band steps in one frame drops both, so a preset change sends
-        // only the preset.
+        // A device sent a preset and band steps in one frame drops both. A preset change therefore
+        // sends only the preset.
         assertContentEquals(
             byteArrayOf(0x58, 0x01, 0x02, 0x00),
             SonyRequest.SetEqualizer(EqualizerPreset.Pop).payload(v1),
@@ -260,7 +263,8 @@ class SonyMessageCodecTest {
         val earbuds =
             SonyCapabilities(
                 ProtocolVersion.V2,
-                functionIds = setOf(0x21),
+                functionIds = setOf(0x15),
+                tables = setOf(ProtocolTable.Table1),
             )
         val leftRight = SonyMessageCodec.encode(SonyRequest.Battery, earbuds, sequence = 3)
         assertContentEquals(byteArrayOf(0x22, 0x01), leftRight.payload)
@@ -268,7 +272,12 @@ class SonyMessageCodecTest {
 
     @Test
     fun `a request for something the device never advertised is refused, not sent`() {
-        val batteryLess = SonyCapabilities(ProtocolVersion.V1, functionIds = emptySet())
+        val batteryLess =
+            SonyCapabilities(
+                ProtocolVersion.V1,
+                functionIds = emptySet(),
+                tables = setOf(ProtocolTable.Table1),
+            )
 
         assertNull(runCatching { SonyMessageCodec.encode(SonyRequest.Battery, batteryLess, 0) }.getOrNull())
         assertNull(

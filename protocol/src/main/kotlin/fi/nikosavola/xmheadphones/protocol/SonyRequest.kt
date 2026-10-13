@@ -1,8 +1,8 @@
 package fi.nikosavola.xmheadphones.protocol
 
 /**
- * The CONNECT commands. A session sends these first, before it knows what the headset can do, which
- * is why they carry no [SonyCapabilities].
+ * The CONNECT commands. A session sends these first, before it knows what the headset can do, so
+ * they carry no [SonyCapabilities].
  */
 public sealed interface SonyHandshakeRequest {
     public val dataType: MdrDataType
@@ -30,8 +30,8 @@ public sealed interface SonyHandshakeRequest {
 }
 
 /**
- * A request made once the handshake has settled. [payload] takes the negotiated capabilities because
- * writing noise control has to use the parameter set the device answered the handshake with.
+ * A request made once the handshake has settled. [payload] takes the negotiated capabilities,
+ * because writing noise control has to use the parameter set the device answered with.
  */
 public sealed interface SonyRequest {
     public val dataType: MdrDataType
@@ -42,8 +42,8 @@ public sealed interface SonyRequest {
      * Whether the headset advertised what this asks for.
      *
      * [payload] refuses to build a request a headset cannot answer, so a caller has to ask this
-     * first. Keeping it on the request means a new one cannot be added without answering the
-     * question, which is what stops a missing check turning into a thrown exception mid-ride.
+     * first. Keeping it on the request forces a new one to answer the question, which stops a
+     * missing check turning into a thrown exception mid-ride.
      */
     public fun supportedBy(capabilities: SonyCapabilities): Boolean
 
@@ -79,16 +79,16 @@ public sealed interface SonyRequest {
     public data class SetNoiseControl(
         public val state: NoiseCancelling,
         /**
-         * Only a noise-adaptive V2 device reads these: this client does not offer the auto-ambient or
-         * sensitivity controls, so it echoes back what the device last reported.
+         * Only a noise-adaptive V2 device reads these. This client offers no auto-ambient or
+         * sensitivity control, so they echo back what the device last reported.
          */
         public val preservedAdaptive: NoiseAdaptiveFields = NoiseAdaptiveFields.Default,
         /**
          * The level to leave on the device while the state is [NoiseCancelling.Off].
          *
          * A V2 headset reports the ambient level whether or not noise control is on, and takes the
-         * value it is given, so switching noise cancelling off with a level of zero would throw away
-         * whatever the rider had set. V1 marks its noise cancelling slot separately and ignores this.
+         * given value. Turning noise cancelling off with a level of zero would throw away whatever
+         * the rider had set. V1 marks its noise cancelling slot separately and ignores this.
          */
         public val ambientLevel: AmbientLevel = AmbientLevel.Silent,
     ) : SonyRequest {
@@ -108,8 +108,10 @@ public sealed interface SonyRequest {
     public data object Equalizer : SonyRequest {
         override val dataType: MdrDataType = MdrDataType.DataMdr
 
-        override fun payload(capabilities: SonyCapabilities): ByteArray =
-            byteArrayOf(EqualizerCommands.GET_PARAM, presetEqType(capabilities.version))
+        override fun payload(capabilities: SonyCapabilities): ByteArray {
+            require(capabilities.supportsEqualizerPreset) { "no preset equalizer was advertised" }
+            return byteArrayOf(EqualizerCommands.GET_PARAM, presetEqType(capabilities.version))
+        }
 
         override fun supportedBy(capabilities: SonyCapabilities): Boolean =
             capabilities.supportsEqualizerPreset
@@ -118,15 +120,17 @@ public sealed interface SonyRequest {
     public data class SetEqualizer(public val preset: EqualizerPreset) : SonyRequest {
         override val dataType: MdrDataType = MdrDataType.DataMdr
 
-        override fun payload(capabilities: SonyCapabilities): ByteArray =
-            // Band steps are left out on purpose: a device sent a preset and band steps in one frame
-            // drops both, so a preset change carries a preset and nothing else.
-            byteArrayOf(
+        override fun payload(capabilities: SonyCapabilities): ByteArray {
+            require(capabilities.supportsEqualizerPreset) { "no preset equalizer was advertised" }
+            // Band steps are left out on purpose. A device sent a preset and band steps in one
+            // frame drops both, so a preset change carries a preset and nothing else.
+            return byteArrayOf(
                 EqualizerCommands.SET_PARAM,
                 presetEqType(capabilities.version),
                 preset.wire.toByte(),
                 NO_BANDS,
             )
+        }
 
         override fun supportedBy(capabilities: SonyCapabilities): Boolean =
             capabilities.supportsEqualizerPreset
@@ -137,8 +141,8 @@ private const val FIXED_VALUE: Byte = 0x00
 private const val NO_BANDS: Byte = 0x00
 
 /**
- * The `COMMON_GET_BATTERY_LEVEL` of V1 and the `POWER_GET_STATUS` of V2. V1 folds battery, charging
- * and power saving together, so V2 moved it into a group of its own.
+ * V1's `COMMON_GET_BATTERY_LEVEL` and V2's `POWER_GET_STATUS`. V1 folds battery, charging and power
+ * saving together, so V2 gives it a group of its own.
  */
 internal fun batteryGetCommand(version: ProtocolVersion): Byte =
     when (version) {
@@ -186,9 +190,9 @@ internal object EqualizerCommands {
 /**
  * The slot the preset equalizer sits in.
  *
- * The two generations number this differently, and V1's value is V2's Clear Bass, so the wrong one
- * does not read as an error: V2 would answer the query with a bass level and take a preset write for
- * one too. `EqEbbInquiredType` in libmdr's ProtocolV1T1.hpp and ProtocolV2T1.hpp.
+ * Numbered differently per generation, and V1's value is V2's Clear Bass, so the wrong one does not
+ * read as an error. V2 would answer the query with a bass level and take a preset write for one too.
+ * `EqEbbInquiredType` in libmdr's ProtocolV1T1.hpp and ProtocolV2T1.hpp.
  */
 internal fun presetEqType(version: ProtocolVersion): Byte =
     when (version) {

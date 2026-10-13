@@ -1,14 +1,12 @@
-package fi.nikosavola.xmheadphones.client
+package fi.nikosavola.xmheadphones.protocol
 
-import fi.nikosavola.xmheadphones.protocol.MdrDataType
-import fi.nikosavola.xmheadphones.protocol.MdrFrame
-import fi.nikosavola.xmheadphones.protocol.MdrFrameCodec
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * A GATT notification is not a message boundary, so the assembler has to cope with a frame split
- * across several of them and with several frames in one.
+ * A read from a socket is not a message boundary. A frame can arrive split across several reads, and
+ * several frames can arrive in one.
  */
 class MdrFrameAssemblerTest {
 
@@ -42,7 +40,7 @@ class MdrFrameAssemblerTest {
     fun `a frame that starts mid-notification is recovered`() {
         val assembler = MdrFrameAssembler()
 
-        // A notification boundary that lands in the middle of an unrelated frame's body.
+        // A boundary landing in the middle of an unrelated frame's body.
         assertEquals(listOf(frame(0, 0x01, 0x02)), assembler.feed(byteArrayOf(0x11, 0x22) + a))
     }
 
@@ -64,12 +62,35 @@ class MdrFrameAssemblerTest {
     }
 
     @Test
+    fun `the largest frame the encoder can produce survives arriving in pieces`() {
+        val assembler = MdrFrameAssembler()
+        // Every byte needs escaping, which is as long as a frame gets.
+        val worst = MdrFrameCodec.encode(MdrFrame(MdrDataType.DataMdr, 0, ByteArray(MAX) { 0x3C }))
+        assertTrue(
+            "a frame longer than the bound: ${worst.size} bytes",
+            worst.size <= MdrFrameCodec.MAX_FRAME_BYTES,
+        )
+        // And longer than the fixed bound this replaced. Without this the test would go on passing
+        // if the payload cap ever dropped far enough for the two bounds to swap places.
+        assertTrue("only ${worst.size} bytes, so nothing is being tested", worst.size > FIXED_BOUND)
+
+        // Everything but the closing marker in one notification, so the buffer holds all of it while
+        // still incomplete. That is the moment a bound below the frame's own length throws it away.
+        val found =
+            assembler.feed(worst.copyOfRange(0, worst.size - 1)) +
+                assembler.feed(worst.copyOfRange(worst.size - 1, worst.size))
+
+        assertEquals(1, found.size)
+        assertEquals(MAX, found.single().payload.size)
+    }
+
+    @Test
     fun `a corrupt frame is dropped and the next one is still read`() {
         val assembler = MdrFrameAssembler()
         val corrupt = a.copyOf().also { it[it.size - 2] = (it[it.size - 2] + 1).toByte() }
 
-        // The bad one never comes out; resynchronising on the next start marker recovers the good one
-        // behind it rather than throwing away everything that followed.
+        // The bad frame never comes out. Resynchronising on the next start marker still recovers the
+        // good frame behind it, instead of discarding everything after it.
         assertEquals(listOf(ack()), assembler.feed(corrupt + b))
     }
 
@@ -77,4 +98,11 @@ class MdrFrameAssemblerTest {
         MdrFrame(MdrDataType.DataMdr, sequence, payload.map(Int::toByte).toByteArray())
 
     private fun ack() = MdrFrame(MdrDataType.Ack, 1, ByteArray(0))
+
+    private companion object {
+        val MAX = MdrFrameCodec.MAX_PAYLOAD_BYTES
+
+        /** The assembler's old hard-coded buffer, which was smaller than a legal frame. */
+        const val FIXED_BOUND = 4096
+    }
 }

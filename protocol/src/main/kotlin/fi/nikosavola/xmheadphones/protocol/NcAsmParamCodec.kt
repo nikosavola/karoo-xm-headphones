@@ -1,8 +1,8 @@
 package fi.nikosavola.xmheadphones.protocol
 
-// Field offsets and meanings come from libmdr's ProtocolV1T1.hpp and ProtocolV2T1.hpp structures.
-// The decoding half is checked against that project's committed WH-1000XM3 capture, which contains a
-// real NC/ASM parameter report and notifications from the button on the headset.
+// Field offsets and meanings come from libmdr's ProtocolV1T1.hpp and ProtocolV2T1.hpp. The decode
+// half is checked against that project's committed WH-1000XM3 capture, which has a real NC/ASM
+// parameter report and headset button notifications.
 
 private const val ON: Byte = 0x01
 private const val OFF: Byte = 0x00
@@ -10,7 +10,7 @@ private const val OFF: Byte = 0x00
 /** V1 `NcAsmSettingType` and `AsmSettingType`. */
 private const val LEVEL_ADJUSTMENT: Byte = 0x01
 
-/** V1 `NcDualSingleValue`: `DUAL` is the noise cancelling slot, `SINGLE` wind noise reduction. */
+/** V1 `NcDualSingleValue`. `DUAL` is the noise cancelling slot, `SINGLE` wind noise reduction. */
 private const val NC_VALUE_OFF: Byte = 0x00
 private const val NC_VALUE_SINGLE: Byte = 0x01
 private const val NC_VALUE_DUAL: Byte = 0x02
@@ -18,7 +18,7 @@ private const val NC_VALUE_DUAL: Byte = 0x02
 private const val ASM_ID_NORMAL: Byte = 0x00
 private const val ASM_ID_VOICE: Byte = 0x01
 
-/** V2 `ValueChangeStatus`. Only [CHANGED] means the device finished moving to the value. */
+/** V2 `ValueChangeStatus`. Only [CHANGED] means the device finished the move. */
 private const val CHANGED: Byte = 0x01
 
 /** V2 `NcAsmMode`. */
@@ -28,21 +28,20 @@ private const val MODE_ASM: Byte = 0x01
 private const val ASM_MODE_NORMAL: Byte = 0x00
 private const val ASM_MODE_VOICE: Byte = 0x01
 
-/** V1 `NcAsmParam`: the inquired type then six fields. */
+/** V1 `NcAsmParam`. The inquired type then six fields. */
 private const val V1_FIELDS = 6
 
-/** V2 `NcAsmParamModeNcDualModeSwitchAsmSeamless`: the type then five fields. */
+/** V2 `NcAsmParamModeNcDualModeSwitchAsmSeamless`. The type then five fields. */
 private const val V2_FIELDS = 5
 
-/** The same structure plus auto-ambient and adaptive sensitivity: the type then seven fields. */
+/** The same structure plus auto-ambient and adaptive sensitivity. The type then seven fields. */
 private const val V2_NOISE_ADAPTIVE_FIELDS = 7
 
 /**
- * The bytes after the inquired type of an `NCASM_RET_PARAM`, `NCASM_NTFY_PARAM` or `NCASM_SET_PARAM`.
+ * The parameter payload of an `NCASM_RET_PARAM`, `NCASM_NTFY_PARAM` or `NCASM_SET_PARAM`.
  *
- * The three dialects disagree on how the same three rider-facing states are spelled, so the
- * translation lives here and nowhere else. The result starts with the inquired type, so it can be
- * appended straight onto the command byte.
+ * The three dialects spell the same three rider-facing states differently, so the translation lives
+ * here. The result starts with the inquired type, so it appends straight onto the command byte.
  */
 internal fun encodeNcAsmSet(
     state: NoiseCancelling,
@@ -58,13 +57,13 @@ internal fun encodeNcAsmSet(
                 encodeV2Body(state, ambientLevel) +
                 byteArrayOf(
                     if (adaptive.autoAmbient) ON else OFF,
-                    adaptive.sensitivity.wire.toByte(),
+                    adaptive.sensitivityWire.toByte(),
                 )
     }
 
 /** Null when the payload is not a noise-control parameter in any dialect we know. */
 internal fun decodeNcAsmParam(payload: ByteArray, inquiredType: Byte): SonyResponse.NoiseControl? {
-    // The first two bytes are the command and the inquired type; the fields follow.
+    // Byte 0 is the command, byte 1 the inquired type. The fields follow.
     val fields = payload.copyOfRange(2, payload.size)
     return when (inquiredType) {
         NcAsmDialect.V1.inquiredType -> decodeV1(fields)
@@ -82,7 +81,7 @@ private fun encodeV1(state: NoiseCancelling): ByteArray {
         if (enabled) ON else OFF,
         LEVEL_ADJUSTMENT,
         // Noise cancelling keeps the "dual" slot, so switching it off leaves the ambient level where
-        // the rider put it, which is what the button on the headset does too.
+        // the rider put it. The button on the headset does the same.
         when {
             state is NoiseCancelling.Cancelling || state is NoiseCancelling.Off -> NC_VALUE_DUAL
             level == AmbientLevel.MIN_STEPS -> NC_VALUE_SINGLE
@@ -99,13 +98,12 @@ private fun encodeV2Body(state: NoiseCancelling, ambientLevel: AmbientLevel): By
     return byteArrayOf(
         CHANGED,
         if (state is NoiseCancelling.Off) OFF else ON,
-        // Off is sent as ambient sound with the whole effect switched off, so a later ambient change
-        // only has to move the level.
+        // Off goes out as ambient sound with the effect switched off, so a later ambient
+        // change only moves the level.
         if (state is NoiseCancelling.Cancelling) MODE_NC else MODE_ASM,
         if (ambient?.focusOnVoice == true) ASM_MODE_VOICE else ASM_MODE_NORMAL,
-        // The level is sent whatever the mode, as the reference client does: a headset takes it, and
-        // sending zero here is what would lose the rider's setting when they switch noise cancelling
-        // off.
+        // The level is sent in every mode, as the reference client does. A headset takes it.
+        // Sending zero would lose the rider's setting when noise cancelling switches off.
         (ambient?.level ?: ambientLevel).steps.toByte(),
     )
 }
@@ -143,17 +141,15 @@ private fun decodeV2(fields: ByteArray, noiseAdaptive: Boolean): SonyResponse.No
         if (!noiseAdaptive) {
             null
         } else {
-            NoiseAdaptiveFields(
+            NoiseAdaptiveFields.fromWire(
                 autoAmbient = fields[5] == ON,
-                sensitivity =
-                    NoiseAdaptiveSensitivity.fromWireOrNull(fields[6].toInt() and 0xFF)
-                        ?: NoiseAdaptiveSensitivity.Standard,
+                sensitivity = fields[6].toInt() and 0xFF,
             )
         }
     return SonyResponse.NoiseControl(
         state = state,
-        // Only the value that means settled counts as settled: a status this client does not know is
-        // one it cannot claim the device finished with.
+        // Only the settled value counts as settled. An unknown status is not one this client can claim
+        // the device finished with.
         settled = fields[0] == CHANGED,
         adaptive = adaptive,
     )

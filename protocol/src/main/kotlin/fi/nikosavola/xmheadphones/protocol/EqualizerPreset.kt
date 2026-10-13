@@ -3,8 +3,8 @@ package fi.nikosavola.xmheadphones.protocol
 /**
  * An equalizer preset the Sound Connect app offers.
  *
- * The wire ids are the same in both protocol generations. `RESERVED_FOR_FUTURE_*` slots are left out
- * deliberately: a device sending one is reporting a preset this client has no name for.
+ * The wire ids match in both protocol generations. The `RESERVED_FOR_FUTURE_*` slots stay out
+ * deliberately. A device sending one reports a preset this client has no name for.
  */
 public enum class EqualizerPreset(public val wire: Int, public val label: String) {
     Off(0x00, "Off"),
@@ -32,7 +32,7 @@ public enum class EqualizerPreset(public val wire: Int, public val label: String
     ;
 
     public companion object {
-        /** Null for a slot we have no name for, which the caller reports rather than mislabels. */
+        /** Null for a slot we have no name for, so the caller reports it rather than mislabels it. */
         public fun fromWireOrNull(wire: Int): EqualizerPreset? =
             entries.firstOrNull { it.wire == wire }
     }

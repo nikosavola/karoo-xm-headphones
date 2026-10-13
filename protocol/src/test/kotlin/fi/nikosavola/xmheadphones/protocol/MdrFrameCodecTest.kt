@@ -6,10 +6,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The packets below are real ones: they were captured from a WH-1000XM3 on firmware 4.5.2 and are
- * committed to mos9527/SonyHeadphonesClient under `tests/WH-1000XM3-4.5.2/`. Encoding has to
- * reproduce them byte for byte, not merely round-trip, or the checksum or the escaping is wrong in a
- * way a symmetric test would happily hide.
+ * The packets here are real. They were captured from a WH-1000XM3 on firmware 4.5.2 and committed to
+ * mos9527/SonyHeadphonesClient under `tests/WH-1000XM3-4.5.2/`. Encoding must reproduce them byte for
+ * byte, not merely round-trip. A wrong checksum or escaping would hide happily inside a symmetric
+ * test.
  */
 class MdrFrameCodecTest {
 
@@ -97,7 +97,7 @@ class MdrFrameCodecTest {
 
     @Test
     fun `a type byte outside the table is rejected rather than guessed at`() {
-        // Built by hand rather than patched, because MdrFrame refuses a type outside the table: type
+        // Built by hand rather than patched, since MdrFrame refuses a type outside the table. Type
         // 0x7F, sequence 0, one payload byte, and a checksum over all of it.
         val encoded = hex("3e7f000000000101813c")
 

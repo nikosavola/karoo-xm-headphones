@@ -3,8 +3,8 @@ package fi.nikosavola.xmheadphones.protocol
 /**
  * How loud the headset lets the outside world in.
  *
- * The protocol numbers this 0..20 and every model we have seen reports the same range, so the
- * value class refuses anything else rather than letting a bad byte reach the UI.
+ * The protocol numbers this 0..20 and every model seen so far reports that range. The value class
+ * refuses anything else, so a bad byte never reaches the UI.
  */
 @JvmInline
 public value class AmbientLevel private constructor(public val steps: Int) {
@@ -17,7 +17,7 @@ public value class AmbientLevel private constructor(public val steps: Int) {
         public fun fromStepsOrNull(steps: Int): AmbientLevel? =
             steps.takeIf { it in MIN_STEPS..MAX_STEPS }?.let(::AmbientLevel)
 
-        /** Clamps instead of refusing: an out-of-range byte from a device is still a level to show. */
+        /** Clamps instead of refusing. An out-of-range byte from a device is still a level to show. */
         public fun clamped(steps: Int): AmbientLevel = AmbientLevel(steps.coerceIn(MIN_STEPS, MAX_STEPS))
     }
 }
@@ -25,11 +25,11 @@ public value class AmbientLevel private constructor(public val steps: Int) {
 /**
  * The headset's noise control setting, as the Sound Connect app presents it.
  *
- * The two protocol generations encode this differently and neither maps one-to-one onto these three
- * cases; the codecs do that translation, and this is what the rest of the app reasons about.
+ * The two generations encode this differently and neither maps one-to-one onto these three cases.
+ * The codecs translate. This is what the rest of the app reasons about.
  */
 public sealed interface NoiseCancelling {
-    /** Neither cancelling nor listening: the microphones are out of the path. */
+    /** Neither cancelling nor listening. The microphones are out of the path. */
     public data object Off : NoiseCancelling
 
     public data object Cancelling : NoiseCancelling
@@ -56,16 +56,38 @@ public enum class NoiseAdaptiveSensitivity(public val wire: Int, public val labe
 }
 
 /**
- * The two fields only a noise-adaptive V2 device carries. This client does not offer either control,
- * so it keeps them so a mode change does not quietly reset them.
+ * The two fields only a noise-adaptive V2 device carries. Neither is offered as a control here, so
+ * they are kept to stop a mode change resetting them.
  */
 public data class NoiseAdaptiveFields(
     public val autoAmbient: Boolean,
     public val sensitivity: NoiseAdaptiveSensitivity,
+    /**
+     * The byte the device sent when [NoiseAdaptiveSensitivity] has no name for it.
+     *
+     * The fields are echoed back, not driven. Reading an unknown value as
+     * [NoiseAdaptiveSensitivity.Standard] would write Standard over the device's setting, the
+     * reset [NoiseAdaptiveFields] exists to avoid.
+     */
+    public val unknownSensitivity: Int? = null,
 ) {
+    /** The byte to put back on the wire. */
+    public val sensitivityWire: Int
+        get() = unknownSensitivity ?: sensitivity.wire
+
     public companion object {
-        /** Auto-ambient off, sensitivity standard, which is what such a device reports by default. */
+        /** What such a device reports by default. Auto-ambient off, sensitivity standard. */
         public val Default: NoiseAdaptiveFields =
             NoiseAdaptiveFields(autoAmbient = false, sensitivity = NoiseAdaptiveSensitivity.Standard)
+
+        /** The fields a reported byte stands for, keeping it when the enum has no name for it. */
+        public fun fromWire(autoAmbient: Boolean, sensitivity: Int): NoiseAdaptiveFields {
+            val named = NoiseAdaptiveSensitivity.fromWireOrNull(sensitivity)
+            return NoiseAdaptiveFields(
+                autoAmbient = autoAmbient,
+                sensitivity = named ?: NoiseAdaptiveSensitivity.Standard,
+                unknownSensitivity = sensitivity.takeIf { named == null },
+            )
+        }
     }
 }

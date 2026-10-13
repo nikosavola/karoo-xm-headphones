@@ -6,11 +6,11 @@ private const val ENABLED = 0x00
 private const val NO_COMMAND = -1
 
 /**
- * The MDR command layer: requests to frames, frames to [SonyResponse].
+ * The MDR command layer. Requests become frames, frames become [SonyResponse].
  *
- * Nothing here throws on a device's input. Everything the headset sends is treated as hostile: a
- * length field is checked before it is used to read, and anything that does not line up comes back as
- * [SonyResponse.Unrecognised] so the session can log it and carry on. A malformed frame must never
+ * Everything the headset sends is untrusted, and nothing here throws on it. A length field is
+ * checked before it is used to read, and anything that does not line up comes back as
+ * [SonyResponse.Unrecognised] for the session to log and carry on past. A malformed frame must never
  * take down a ride.
  */
 public object SonyMessageCodec {
@@ -26,11 +26,10 @@ public object SonyMessageCodec {
     /**
      * Reads a packet the headset sent.
      *
-     * [version] is the generation the session settled on in the handshake, and null before then. It
-     * is needed because one reply's meaning genuinely depends on it: V1 puts the preset equalizer in
-     * slot 0x01 and V2 puts its Clear Bass there, so a packet with a 0x01 in that position is a preset
-     * on one generation and a bass level on the other. Nothing that arrives before the handshake is
-     * ambiguous, which is why null is allowed.
+     * [version] is the generation the handshake settled on, null before then. V1 keeps its preset
+     * in slot 0x01, V2 keeps its Clear Bass there, so a 0x01 is a preset on one generation and a
+     * bass level on the other. Nothing that arrives before the handshake is ambiguous, so null is
+     * allowed.
      */
     public fun decode(frame: MdrFrame, version: ProtocolVersion?): SonyResponse {
         if (frame.type == MdrDataType.Ack) return SonyResponse.Acknowledged(frame.sequence)
@@ -57,9 +56,9 @@ public object SonyMessageCodec {
     }
 
     /**
-     * V1 answers with a two byte version, V2 with a four byte one followed by two table flags. The
-     * length is the only thing that tells them apart, so a reply too short for either is refused
-     * rather than guessed at.
+     * V1 answers with a two byte version. V2 answers with a four byte one followed by two table
+     * flags. The length is the only thing that tells them apart, so a reply too short for either is
+     * refused rather than guessed at.
      */
     private fun protocolInfo(payload: ByteArray): SonyResponse.ProtocolInfo? =
         when (payload.size) {
@@ -74,8 +73,8 @@ public object SonyMessageCodec {
                         },
                 )
             4 -> SonyResponse.ProtocolInfo(ProtocolVersion.V1, setOf(ProtocolTable.Table1))
-            // Refused rather than guessed at: a reply of any other length is not either generation's
-            // answer, and settling the version wrongly decides every command that follows.
+            // Refused rather than guessed. Any other length is not either generation's answer,
+            // and a wrong version steers every command that follows.
             else -> null
         }
 
@@ -84,24 +83,27 @@ public object SonyMessageCodec {
         val question =
             DeviceInfoQuestion.entries.firstOrNull { it.wire == payload[1].toInt() and 0xFF }
                 ?: return null
-        // Series and colour come back as two bytes rather than a string, and nothing here shows them.
+        // Series and colour come back as two bytes, not a string. Nothing here shows them.
         if (question == DeviceInfoQuestion.SeriesAndColor) {
             return SonyResponse.DeviceInfo(question, value = null)
         }
-        return SonyResponse.DeviceInfo(question, readPrefixedString(payload, 2))
+        // Null is the series reply's spelling of "no string", so a name running past the payload must
+        // not read as null. That would pass a truncated reply off as a device with no name, a success
+        // even though the headset never answered.
+        return readPrefixedString(payload, 2)?.let { SonyResponse.DeviceInfo(question, it) }
     }
 
     /**
-     * V1 lists the functions as a run of bytes; V2 sends each one followed by its order in the table.
-     * The reply's length is what tells the two apart, which keeps this independent of a version the
-     * decoder is not told: the pair form is twice as long for the same count.
+     * V1 lists the functions as a run of bytes, V2 sends each one followed by its order in the
+     * table. Length tells the two apart, which keeps this independent of a version this decoder is
+     * not told. The pair form is twice as long for the same count.
      */
     private fun supportedFunctions(payload: ByteArray): SonyResponse.SupportedFunctions? {
         if (payload.size < 3) return null
         val count = payload[2].toInt() and 0xFF
-        // Exact lengths, not at least: a reply that lost a byte would otherwise pass the shorter form
-        // and have the function ids read out of the following priority bytes, which invents a
-        // capability list and enables features the device never advertised.
+        // Exact lengths, not minimums. A reply that lost a byte would pass as the shorter form and
+        // read ids out of the following priority bytes, inventing capabilities and enabling
+        // features the device never advertised.
         return when (payload.size) {
             3 + count * 2 ->
                 SonyResponse.SupportedFunctions(
@@ -129,8 +131,8 @@ public object SonyMessageCodec {
                                 right = batteryStatus(payload, 4),
                             ),
                         )
-                    // Some models report the levels with a zero placeholder between them and no
-                    // charging byte at all, which is the earbuds' form rather than the headsets'.
+                    // Some models send the levels with a zero placeholder between them and no
+                    // charging byte. That is the earbuds' form, not the headsets'.
                     payload.size == 5 ->
                         SonyResponse.Battery(
                             BatteryReading.LeftRight(
@@ -151,7 +153,7 @@ public object SonyMessageCodec {
             charging = chargingFromWire(payload[offset + 1].toInt() and 0xFF),
         )
 
-    /** A level with no charging byte to go with it; the device reported only half the answer. */
+    /** A level with no charging byte, half an answer. */
     private fun levelOnly(payload: ByteArray, offset: Int): BatteryStatus =
         BatteryStatus.fromDevice(payload[offset].toInt() and 0xFF, charging = false)
 
@@ -168,12 +170,12 @@ public object SonyMessageCodec {
         // Nothing the equalizer says can be read before the generation is known.
         val presetSlot = version?.let(::presetEqType) ?: return null
         // Only the preset form is read. The Clear Bass and custom-band forms carry curves nothing
-        // displays, and on V2 the Clear Bass slot is the one V1 keeps its preset in.
+        // displays, and V2's Clear Bass slot is the one V1 keeps its preset in.
         if (payload[1] != presetSlot) return null
         return SonyResponse.Equalizer(EqualizerPreset.fromWireOrNull(payload[2].toInt() and 0xFF))
     }
 
-    /** A one byte length then that many UTF-8 bytes, which is how the protocol spells a string. */
+    /** How the protocol spells a string. One length byte, then that many UTF-8 bytes. */
     private fun readPrefixedString(payload: ByteArray, offset: Int): String? {
         if (offset >= payload.size) return null
         val length = payload[offset].toInt() and 0xFF
