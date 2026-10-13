@@ -5,14 +5,9 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
-import android.bluetooth.le.ScanCallback
-import android.bluetooth.le.ScanFilter
-import android.bluetooth.le.ScanResult
-import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
-import android.os.ParcelUuid
 import fi.nikosavola.xmheadphones.protocol.DeviceInfoQuestion
 import fi.nikosavola.xmheadphones.protocol.EqualizerPreset
 import fi.nikosavola.xmheadphones.protocol.NoiseCancelling
@@ -33,23 +28,23 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /**
- * Talks to a Sony headset over BLE: finds one, keeps the link, and exposes what it reports as
- * [state] while offering its controls as suspend functions.
+ * Talks to a Sony headset: finds the paired one, keeps the link, and exposes what it reports as
+ * [state] with its controls as suspend functions.
  *
- * One instance per process. The connection is reference counted so that the extension service and a
- * settings screen can both hold it, and it lingers after the last of them lets go, because getting
- * the link back costs the rider a wait for the headset to accept a connection again.
+ * The control channel is a classic Bluetooth serial profile, so a headset has to be paired before
+ * this can reach it at all. Pairing is the rider's own step, done in Karoo's Bluetooth settings,
+ * which is also how their audio gets there.
  *
- * Nothing here connects on its own: [start] has to be called, and every command returns false rather
- * than throwing when there is no link, so a caller that is merely early does not have to handle an
- * exception.
+ * One instance per process. The connection is reference counted, so the extension service and a
+ * settings screen can hold it at the same time. It lingers briefly after the last hold goes, because
+ * getting the link back makes the rider wait for the headset to accept a connection again.
+ *
+ * Nothing connects on its own. [start] has to be called, and every command returns false instead of
+ * throwing when there is no link, so a caller that is early needs no exception handling.
  */
 public class XmHeadphonesClient private constructor(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -63,16 +58,44 @@ public class XmHeadphonesClient private constructor(private val context: Context
     private var lingerJob: Job? = null
     private var users = 0
 
+    /** Which candidate the next attempt takes, so a device that will not answer is not retried alone. */
+    @Volatile private var candidateIndex = 0
+
+    /** Whether a headset ever completed a handshake since the last [start]. */
+    @Volatile private var hasConnected = false
+
+    /**
+     * How long a link that has dropped stays up after the last hold is released.
+     *
+     * Only for a headset that was reached at least once: with none ever reached, [stop] shuts down at
+     * once rather than sitting on the radio, so a caller that has just given up gets what it asked
+     * for. A watch should still ask for a shorter spell than the default.
+     */
+    @Volatile
+    public var lingerMillis: Long = DEFAULT_LINGER_MS
+
+    /**
+     * How the bytes reach the headset.
+     *
+     * The classic serial profile, unless a caller has another way to the same headset. A test sets
+     * this to one that answers in the protocol's own bytes, and a platform without classic Bluetooth
+     * sets it to whatever it does have. It brings its own way of telling one paired device from
+     * another, so nothing outside it knows which profile is in use. Read when the next connection is
+     * opened, so it is safe to set while one is up.
+     */
+    @Volatile
+    public var transport: HeadsetTransportFactory = RfcommTransport
+
     /** Address of the headset this client is locked to, or null until one has been found. */
     public val savedAddress: String?
         get() = prefs.getString(KEY_ADDRESS, null)
 
     /**
-     * Asks for a connection. Reference counted, so the caller that starts twice has to stop twice.
+     * Asks for a connection. Reference counted, so a caller that starts twice has to stop twice.
      *
-     * The permission check happens here rather than in a caller: without it nothing can be scanned,
-     * and a rider who denied the permission should see that state rather than a search that never
-     * ends.
+     * The permission check lives in here rather than in a caller. Without it no paired device can be
+     * read and no channel opened, and a rider who denied the permission should see that state rather
+     * than a search that never ends.
      */
     @Synchronized
     public fun start() {
@@ -98,10 +121,19 @@ public class XmHeadphonesClient private constructor(private val context: Context
         }
         users--
         if (users == 0 && job != null) {
-            Timber.i("Last hold released; stopping in ${STOP_LINGER_MS / 1000} s")
+            if (!hasConnected) {
+                // Nothing ever connected, so there is no link worth keeping warm. Lingering would
+                // leave the loop looking for a headset with nobody holding it, which is the last
+                // thing a caller that has just given up wants on a battery.
+                Timber.i("Last hold released with no headset ever connected; stopping now")
+                shutDown()
+                return
+            }
+            val linger = lingerMillis
+            Timber.i("Last hold released; stopping in ${linger / 1000} s")
             lingerJob?.cancel()
             lingerJob = scope.launch {
-                delay(STOP_LINGER_MS)
+                delay(linger)
                 shutDown()
             }
         }
@@ -113,20 +145,22 @@ public class XmHeadphonesClient private constructor(private val context: Context
         Timber.i("Stopping the headset connection")
         job?.cancel()
         job = null
+        hasConnected = false
         _state.value = XmHeadphonesState()
     }
 
-    /** Drops the saved headset so the next one put into pairing mode is used instead. */
+    /** Drops the saved headset, so the next connection is whichever paired one answers first. */
     @Synchronized
     public fun forget() {
         Timber.i("Forgetting headset ${savedAddress}")
         prefs.edit().remove(KEY_ADDRESS).apply()
+        candidateIndex = 0
         val previous = job ?: return
         activeSession = null
         _state.value = XmHeadphonesState()
-        // The cancelled loop clears activeSession again as it unwinds, so the next one waits for it
-        // rather than racing it. Without that, the stale cleanup can null the new session and every
-        // command goes nowhere until the following reconnect.
+        // The cancelled loop clears activeSession again as it unwinds, so the next one waits for that
+        // instead of racing it. Without this, the stale cleanup can null the new session, and every
+        // command goes nowhere until the next reconnect.
         job = scope.launch {
             previous.cancelAndJoin()
             runForever()
@@ -149,6 +183,7 @@ public class XmHeadphonesClient private constructor(private val context: Context
     }
 
     private suspend fun runForever() {
+        var failedAttempts = 0
         while (true) {
             val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
             if (!hasPermissions()) {
@@ -161,36 +196,104 @@ public class XmHeadphonesClient private constructor(private val context: Context
                 delay(PRECONDITION_POLL_MS)
                 continue
             }
-            try {
-                setLink(HeadphonesLink.Searching)
-                val device = scan(adapter)
-                setLink(HeadphonesLink.Connecting)
-                runSession(device)
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (failure: Exception) {
-                Timber.w("Connection ended: ${failure.message}")
-                _state.update { it.copy(lastError = failure.message) }
+            setLink(HeadphonesLink.Searching)
+            val device = nextCandidate(adapter)
+            if (device == null) {
+                // Nothing paired looks like a headset. There is no scan that could find one: the
+                // control channel only exists once the headset is paired, and pairing is the rider's
+                // own step in Karoo's Bluetooth settings. So this waits for one to appear.
+                delay(PAIRING_POLL_MS)
+                continue
             }
-            // The battery is kept: it was true a moment ago and a screen showing it is better than a
-            // blank one. Everything else only the headset can answer for.
+            setLink(HeadphonesLink.Connecting)
+            val connected =
+                try {
+                    runSession(device)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (failure: Exception) {
+                    Timber.w("Connection ended: ${failure.message}")
+                    _state.update { it.copy(lastError = failure.message) }
+                    false
+                }
+            // Only a device that would not connect is passed over. One that did and then dropped is
+            // the one the rider is wearing, so the next attempt goes back to it.
+            if (!connected) candidateIndex++
+            // The battery stays: it was true a moment ago, and a screen showing it beats a blank one.
+            // Everything else only the headset can answer for.
             _state.update { it.copy(link = HeadphonesLink.Searching) }
-            delay(RETRY_DELAY_MS)
+            // Without a growing gap, a headset that answers but refuses the connection is retried
+            // every second for as long as anything holds this client, with the radio on throughout.
+            // Once something has connected the gap stays short, because a dropped link is worth
+            // getting back promptly.
+            failedAttempts = if (hasConnected) 0 else failedAttempts + 1
+            delay(if (failedAttempts == 0) RETRY_DELAY_MS else retryDelayMillis(failedAttempts))
         }
     }
 
-    private suspend fun runSession(device: BluetoothDevice) {
-        val session = SonySession(context, device)
+    /**
+     * The paired device to try, or null when none of them could be one.
+     *
+     * A device the headset was last reached on goes first, since that is the one the rider is using.
+     * [candidateIndex] is what passes over one that will not answer, so a rider with two headsets
+     * reaches the second rather than retrying the first forever.
+     */
+    @SuppressLint("MissingPermission") // hasPermissions ran first
+    private fun nextCandidate(adapter: BluetoothAdapter): BluetoothDevice? {
+        val saved = savedAddress
+        val factory = transport
+        val candidates =
+            runCatching { adapter.bondedDevices }.getOrDefault(emptySet()).sortedByDescending {
+                device ->
+                when {
+                    device.address == saved -> 2
+                    // Whatever the transport can recognise its peer by. A device it cannot tell about
+                    // is still tried: its services were never recorded, which says nothing about
+                    // whether it runs one, and a wrong guess costs one failed attempt.
+                    reachable(factory, device) -> 1
+                    else -> 0
+                }
+            }
+        if (candidates.isEmpty()) {
+            candidateIndex = 0
+            return null
+        }
+        return candidates[candidateIndex % candidates.size]
+    }
+
+    /**
+     * Whether the transport recognises [device], which is only ever a hint about the order to try
+     * them in.
+     *
+     * A transport that throws is a broken one rather than a headset that is not there, and this is
+     * where a caller's own transport meets a loop that has to keep running whatever it does. Losing
+     * the loop to it would leave the link saying whatever it last said, with nothing looking again.
+     */
+    private fun reachable(factory: HeadsetTransportFactory, device: BluetoothDevice): Boolean =
+        runCatching { factory.looksReachable(device) }
+            .onFailure {
+                Timber.w("The transport could not tell whether ${device.address} is reachable: ${it.message}")
+            }
+            .getOrDefault(false)
+
+    /** False when the headset never answered, which is what moves the search on to the next one. */
+    private suspend fun runSession(device: BluetoothDevice): Boolean {
+        val session = SonySession(transport.open(device))
         val collector = scope.launch {
             session.responses.collect { response -> apply(response) }
         }
         activeSession = session
+        var connected = false
         try {
             coroutineScope {
                 val running = launch { session.run() }
                 session.handshaken.await()
+                connected = true
                 prefs.edit().putString(KEY_ADDRESS, device.address).apply()
                 Timber.i("Connected to ${device.address}")
+                // Set before the link is published, so a caller that sees Connected and immediately
+                // lets go still gets the linger rather than an abrupt shutdown.
+                hasConnected = true
                 _state.update {
                     it.copy(
                         link = HeadphonesLink.Connected,
@@ -201,10 +304,14 @@ public class XmHeadphonesClient private constructor(private val context: Context
                 running.join()
             }
         } finally {
-            activeSession = null
+            // Only if this is still the session in use. A caller that comes back after the linger can
+            // have started the next one already, and clearing it here would leave the state saying
+            // Connected while every command finds no session and does nothing.
+            if (activeSession === session) activeSession = null
             collector.cancel()
             session.close()
         }
+        return connected
     }
 
     private fun apply(response: SonyResponse) {
@@ -251,115 +358,41 @@ public class XmHeadphonesClient private constructor(private val context: Context
             context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED
         }
 
-    // region scanning
-
-    /** Suspends until a headset is seen advertising, preferring the one we were talking to before. */
-    @SuppressLint("MissingPermission") // hasPermissions ran first
-    private suspend fun scan(adapter: BluetoothAdapter): BluetoothDevice {
-        val address = savedAddress
-        val filter =
-            if (address != null) {
-                ScanFilter.Builder().setDeviceAddress(address).build()
-            } else {
-                ScanFilter.Builder()
-                    .setServiceUuid(ParcelUuid(SonyGatt.SERVICE))
-                    .build()
-            }
-        Timber.i(if (address != null) "Looking for $address" else "Looking for any Sony headset")
-        while (true) {
-            // Android quietly demotes a scan that runs longer than half an hour; restarting avoids it.
-            val device = withTimeoutOrNull(SCAN_RESTART_MS) { scanOnce(adapter, filter) }
-            if (device != null) return device
-            Timber.d("Still looking for the headset")
-        }
-    }
-
-    @SuppressLint("MissingPermission") // hasPermissions ran first
-    private suspend fun scanOnce(
-        adapter: BluetoothAdapter,
-        filter: ScanFilter,
-    ): BluetoothDevice = suspendCancellableCoroutine { continuation ->
-        val scanner = adapter.bluetoothLeScanner
-        if (scanner == null) {
-            continuation.resumeWithException(IOException("Bluetooth is off"))
-            return@suspendCancellableCoroutine
-        }
-        val callback =
-            object : ScanCallback() {
-                override fun onScanResult(callbackType: Int, result: ScanResult) {
-                    if (!continuation.isActive) return
-                    // Diagnostics only: reading the address and the name needs BLUETOOTH_CONNECT, and a
-                    // rider who revokes it mid-scan must not take the scan thread down with the log
-                    // line. A result only reaches here having matched the filter, so this is the one
-                    // place a mismatch between the filter and the device shows up.
-                    runCatching {
-                        val record = result.scanRecord
-                        val manufacturers =
-                            record?.manufacturerSpecificData?.let { data ->
-                                (0 until data.size()).map { data.keyAt(it) }
-                            }
-                        Timber.i(
-                            "Found ${result.device.address} " +
-                                "rssi=${result.rssi} name=${result.device.name} " +
-                                "advertised=${record?.deviceName} " +
-                                "services=${record?.serviceUuids?.map { it.uuid }} " +
-                                "manufacturers=$manufacturers",
-                        )
-                    }
-                    runCatching { scanner.stopScan(this) }
-                    continuation.resume(result.device)
-                }
-
-                override fun onScanFailed(errorCode: Int) {
-                    if (!continuation.isActive) return
-                    continuation.resumeWithException(IOException("Scan failed, error $errorCode"))
-                }
-            }
-        val settings =
-            ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
-        scanner.startScan(listOf(filter), settings, callback)
-        continuation.invokeOnCancellation { runCatching { scanner.stopScan(callback) } }
-    }
-
-    // endregion
-
     public companion object {
         private const val PREFERENCES = "sony-headphones"
         private const val KEY_ADDRESS = "headset_address"
 
         private const val PRECONDITION_POLL_MS = 5_000L
+        private const val PAIRING_POLL_MS = 10_000L
         private const val RETRY_DELAY_MS = 1_000L
-        private const val STOP_LINGER_MS = 120_000L
-        private const val SCAN_RESTART_MS = 10 * 60_000L
+        private const val MAX_RETRY_DELAY_MS = 30_000L
+
+        /** Doubles the gap per failed attempt, up to [MAX_RETRY_DELAY_MS]. */
+        private fun retryDelayMillis(failedAttempts: Int): Long =
+            (RETRY_DELAY_MS shl (failedAttempts - 1).coerceIn(0, 15)).coerceAtMost(MAX_RETRY_DELAY_MS)
+
+        /** The default for [lingerMillis], sized for a device with a battery to spare. */
+        public const val DEFAULT_LINGER_MS: Long = 120_000L
 
         /**
-         * The permissions a scan needs on [sdkInt], which a caller has to hold before [start] does
-         * anything useful.
+         * What a caller has to hold before [start] does anything useful, on [sdkInt].
          *
-         * Android 12 put BLE behind its own pair; before that, a scan result required location
-         * instead. The Karoo in hand reports API 32, so the first branch is the live one; the second
-         * covers units still on an older platform, which is why it is not a leftover.
+         * Android 12 put reading the paired devices, which is what picking the headset out of them
+         * needs, behind `BLUETOOTH_CONNECT`. Before that the platform's own `BLUETOOTH` and
+         * `BLUETOOTH_ADMIN` cover it, and both are granted at install, so nothing is asked for at
+         * runtime. That is why the older branch is empty rather than a leftover.
          *
-         * This is public because a caller that keeps its own copy of the list can drift from it, and
-         * the symptom is a rider stuck on a permission prompt that never satisfies the scan. Each
-         * name also has to be declared in the caller's manifest; requesting one that is not is
-         * ignored, silently.
-         *
-         * The list is what has to be asked for; it is not everything a scan needs. Below Android 12
-         * the platform also wants the install-time `BLUETOOTH` and `BLUETOOTH_ADMIN` declared, and a
-         * scan without them throws rather than reporting the state this class has for it. They are
-         * absent here because they are granted at install, so there is no prompt to show for them and
-         * nothing to ask the rider.
+         * The list is public so a caller asks for it instead of keeping a copy. A copy that drifts
+         * leaves the rider on a permission prompt that never satisfies the connection. Each name
+         * also has to be declared in the caller's own manifest, and a request for one that is not
+         * is ignored without an error.
          */
         // The names are compile-time String constants, so naming them below API 31 costs nothing at
-        // runtime; lint sees the fields they come from and cannot tell.
+        // runtime. Lint sees the fields they come from and cannot tell.
         @SuppressLint("InlinedApi")
         public fun requiredPermissions(sdkInt: Int = Build.VERSION.SDK_INT): List<String> =
-            if (sdkInt >= Build.VERSION_CODES.S) {
-                listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
-            } else {
-                listOf(Manifest.permission.ACCESS_FINE_LOCATION)
-            }
+            if (sdkInt >= Build.VERSION_CODES.S) listOf(Manifest.permission.BLUETOOTH_CONNECT)
+            else emptyList()
 
         // The application context, not an activity's: this is the process-wide client, and its
         // lifetime is the process's by design.

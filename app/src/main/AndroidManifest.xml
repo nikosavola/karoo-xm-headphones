@@ -2,28 +2,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Before Android 12 a scan result needs location, and the radio needs the two install-time
-         permissions. The Karoo in hand reports API 32 and drops all three from its manifest, so this
-         is the branch only units on an older platform take. -->
+    <!-- The headset is reached over classic Bluetooth, on the serial channel it registers with SDP,
+         so there is nothing to scan for and no BLE feature to require. Below Android 12 these two
+         are all the radio needs, and both are granted at install. -->
     <uses-permission
         android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30" />
     <uses-permission
         android:name="android.permission.BLUETOOTH_ADMIN"
         android:maxSdkVersion="30" />
-    <uses-permission
-        android:name="android.permission.ACCESS_FINE_LOCATION"
-        android:maxSdkVersion="30" />
-    <!-- Android 12 onwards, which is what the Karoo runs now -->
-    <uses-permission
-        android:name="android.permission.BLUETOOTH_SCAN"
-        android:usesPermissionFlags="neverForLocation"
-        tools:targetApi="s" />
+    <!-- Android 12 onwards, which is what the Karoo runs now, and what reading the paired devices
+         and opening the channel to one needs. -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-
-    <uses-feature
-        android:name="android.hardware.bluetooth_le"
-        android:required="true" />
 
     <application
         android:name=".XmHeadphonesApplication"

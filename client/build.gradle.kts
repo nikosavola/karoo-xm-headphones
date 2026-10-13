@@ -1,6 +1,6 @@
-// Android library: the BLE transport and connection lifecycle on top of `protocol`. Third parties
-// (including a future Wear OS app) depend on this to talk to a Sony headset without reimplementing
-// the GATT session.
+// Android library: the classic Bluetooth transport and the connection lifecycle on top of
+// `protocol`. Third parties (including a future Wear OS app) depend on this to talk to a Sony headset
+// without reimplementing the session.
 plugins {
   alias(libs.plugins.android.library)
   `maven-publish`
