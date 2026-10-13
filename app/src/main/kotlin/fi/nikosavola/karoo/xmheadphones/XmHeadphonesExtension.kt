@@ -150,23 +150,6 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_N
         super.onDestroy()
     }
 
-    /**
-     * Whether a borrow can stop waiting.
-     *
-     * [HeadphonesLink.Idle] is not one of these: it is what the state says before the connection has
-     * even been asked for, so treating it as an answer would make the first press of the button do
-     * nothing at all while later ones worked.
-     */
-    internal fun HeadphonesLink.isSettled(): Boolean =
-        when (this) {
-            HeadphonesLink.Connected,
-            HeadphonesLink.NoPermission,
-            HeadphonesLink.BluetoothOff -> true
-            HeadphonesLink.Idle,
-            HeadphonesLink.Searching,
-            HeadphonesLink.Connecting -> false
-        }
-
     @Synchronized
     private fun releaseClient() {
         if (holdsClient) client.stop()
