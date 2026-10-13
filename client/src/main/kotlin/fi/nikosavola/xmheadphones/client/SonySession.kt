@@ -350,28 +350,30 @@ internal class SonySession(
     private suspend fun processIncoming() {
         try {
             for (frame in incoming) {
-            val response = SonyMessageCodec.decode(frame, _capabilities.value?.version)
-            // Every data frame is acknowledged, the ones this client cannot read included: an
-            // unacknowledged headset resends, which turns one unknown command into a loop.
-            if (frame.type != MdrDataType.Ack) acknowledge(frame.sequence)
-            when (response) {
-                is SonyResponse.Acknowledged -> {
-                    if (!acknowledgements.trySend(response.sequence).isSuccess) {
-                        Timber.w("Dropped an acknowledgement: the queue is full")
-                    }
-                }
-                is SonyResponse.Unrecognised -> Timber.d("Ignoring command ${response.command}")
-                else -> {
-                    rememberAmbientLevel(response)
-                    val command = frame.payload.firstOrNull() ?: 0
-                    waiters
-                        .firstOrNull { it.matches(response) && it.expectedReplyCommand == command }
-                        ?.let { waiter ->
-                            waiters.remove(waiter)
-                            waiter.channel.trySend(response)
+                val response = SonyMessageCodec.decode(frame, _capabilities.value?.version)
+                // Every data frame is acknowledged, the ones this client cannot read included: an
+                // unacknowledged headset resends, which turns one unknown command into a loop.
+                if (frame.type != MdrDataType.Ack) acknowledge(frame.sequence)
+                when (response) {
+                    is SonyResponse.Acknowledged -> {
+                        if (!acknowledgements.trySend(response.sequence).isSuccess) {
+                            Timber.w("Dropped an acknowledgement: the queue is full")
                         }
-                    _responses.tryEmit(response)
-                }
+                    }
+                    is SonyResponse.Unrecognised -> Timber.d("Ignoring command ${response.command}")
+                    else -> {
+                        rememberAmbientLevel(response)
+                        val command = frame.payload.firstOrNull() ?: 0
+                        waiters
+                            .firstOrNull {
+                                it.matches(response) && it.expectedReplyCommand == command
+                            }
+                            ?.let { waiter ->
+                                waiters.remove(waiter)
+                                waiter.channel.trySend(response)
+                            }
+                        _responses.tryEmit(response)
+                    }
                 }
             }
         } finally {
