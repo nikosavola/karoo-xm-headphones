@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  In a plain mipmap folder rather than mipmap-anydpi-v26, which is where an adaptive icon usually
+  lives. The version qualifier earns nothing at minSdk 26, where adaptive icons start, and lint asks
+  for the folder to be called mipmap-anydpi instead. Renaming it to that fails this build: aapt2
+  reports the icon as missing rather than as misplaced, so the plain folder stays.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <!-- For the launchers that recolour an icon to their own theme, which take the shape from here
+         and ignore its colour. -->
+    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>
