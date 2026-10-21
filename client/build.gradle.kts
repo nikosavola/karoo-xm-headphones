@@ -17,6 +17,10 @@ android {
   testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
+// Published for other clients, so the public surface is deliberate rather than whatever is not
+// private yet.
+kotlin { explicitApi() }
+
 dependencies {
   api(project(":protocol"))
   api(libs.kotlinx.coroutines.android)
