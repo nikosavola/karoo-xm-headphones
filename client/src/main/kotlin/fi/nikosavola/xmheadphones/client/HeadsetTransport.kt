@@ -44,4 +44,14 @@ public fun interface HeadsetTransportFactory {
      * transport that does not recognise its peer from outside.
      */
     public fun looksReachable(device: BluetoothDevice): Boolean = true
+
+    /**
+     * Whether [device] is carrying audio at this moment, which is the cheapest sign that it is
+     * switched on and in reach: a headset the rider is listening to is connected for sound.
+     *
+     * A device that is not is asleep, off or out of range, and the client skips opening it for a
+     * while rather than paging the radio on the chance that it answers. Answering true when it
+     * cannot tell is deliberate, so a guess never costs a connection that would have worked.
+     */
+    public fun carryingAudio(device: BluetoothDevice): Boolean = true
 }

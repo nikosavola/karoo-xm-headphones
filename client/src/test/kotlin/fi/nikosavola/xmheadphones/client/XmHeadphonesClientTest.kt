@@ -476,6 +476,61 @@ class XmHeadphonesClientTest {
         assertEquals(80, reconnected.batteryPercent)
     }
 
+    @Test
+    fun `a paired headset that carries no audio is not opened`() {
+        granted()
+        headsetWith().carriesAudio = false
+        client.absentProbeMillis = 50
+
+        client.start()
+        await {
+            client.state.value.takeIf {
+                it.link == HeadphonesLink.Searching && it.lastError == HeadsetProblem.NotConnected
+            }
+        }
+        // A few probes' worth of time. Paging a headset that is off is what this is here to avoid,
+        // and one attempt would already be the whole cost this test exists for.
+        Thread.sleep(300)
+
+        assertEquals(
+            "the client opened a channel to a headset that cannot answer",
+            0,
+            headset.openAttempts.get(),
+        )
+    }
+
+    @Test
+    fun `a headset that starts carrying audio is connected without a restart`() {
+        granted()
+        headsetWith().carriesAudio = false
+        client.absentProbeMillis = 50
+        client.start()
+        await { client.state.value.takeIf { it.link == HeadphonesLink.Searching } }
+
+        headset.carriesAudio = true
+
+        val state =
+            await(describe = { "no connection after the audio link came up: ${client.state.value}" }) {
+                client.state.value.takeIf {
+                    it.link == HeadphonesLink.Connected && it.battery != null
+                }
+            }
+
+        assertEquals(80, state.batteryPercent)
+    }
+
+    @Test
+    fun `a headset that stays away is retried with a growing gap`() {
+        // A dropped link is worth getting back promptly, so the first attempts stay a second apart.
+        // A headset that stays away is another matter: without the growth a ride spent with it off
+        // would page the radio every second for hours.
+        val gaps = (1..20).map { failed -> XmHeadphonesClient.retryDelayMillis(failed) }
+
+        assertEquals("a dropped link is retried promptly", List(5) { 1_000L }, gaps.take(5))
+        assertEquals("the gap never started growing", 4_000L, gaps[6])
+        assertEquals("the gap is not capped at five minutes", 300_000L, gaps.last())
+    }
+
     /**
      * A second headset must not come up wearing the first one's name.
      *

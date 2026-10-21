@@ -2,7 +2,10 @@ package fi.nikosavola.xmheadphones.client
 
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothSocket
+import android.content.Context
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -12,6 +15,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
+import timber.log.Timber
 
 /**
  * Sony's classic control channel, which is where a headset actually answers.
@@ -73,6 +77,46 @@ public object RfcommTransport : HeadsetTransportFactory {
     @SuppressLint("MissingPermission") // the client checks the permission before asking
     override fun looksReachable(device: BluetoothDevice): Boolean =
         runCatching { device.uuids.orEmpty().any { it.uuid in SERVICES } }.getOrDefault(false)
+
+    /**
+     * The profile states are asked of a context, which a platform singleton has to be handed.
+     *
+     * Unattached, this answers true, so the client still tries the connection it would otherwise
+     * skip. Only the client that owns the default uses it, and one that supplies its own transport
+     * never comes near this.
+     */
+    private var profiles: BluetoothManager? = null
+
+    internal fun attach(context: Context) {
+        profiles = context.applicationContext.getSystemService(BluetoothManager::class.java)
+    }
+
+    @SuppressLint("MissingPermission") // the client checks the permission before asking
+    override fun carryingAudio(device: BluetoothDevice): Boolean {
+        val manager = profiles ?: return true
+        // Asked one profile at a time: a platform without a profile throws for it, and the Karoo in
+        // hand runs no headset profile at all. One that will not answer is left out rather than
+        // taking the rest of the question with it.
+        val states =
+            AUDIO_PROFILES.mapNotNull { profile ->
+                runCatching { manager.getConnectionState(device, profile) }
+                    .onFailure { Timber.d("No ${profile} state for ${device.address}: ${it.message}") }
+                    .getOrNull()
+            }
+        if (states.isNotEmpty()) return states.any { it == BluetoothProfile.STATE_CONNECTED }
+        // A platform that will not answer per device still says whether the profile is up at all.
+        // The Karoo in hand does exactly that: both profiles report "profile not supported" for a
+        // device, while the adapter-wide state is there. With one headset that is the same question.
+        val profileStates =
+            AUDIO_PROFILES.mapNotNull { profile ->
+                runCatching { manager.adapter?.getProfileConnectionState(profile) }.getOrNull()
+            }
+        // Nothing to go on is not the same as knowing the answer, so the attempt is made.
+        if (profileStates.isEmpty()) return true
+        return profileStates.any { it == BluetoothProfile.STATE_CONNECTED }
+    }
+
+    private val AUDIO_PROFILES = listOf(BluetoothProfile.A2DP, BluetoothProfile.HEADSET)
 
     /** An open socket, as the pipe the session reads and writes. */
     private class SocketTransport(private val socket: BluetoothSocket) : HeadsetTransport {

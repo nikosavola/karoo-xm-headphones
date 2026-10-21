@@ -49,6 +49,13 @@ internal class FakeHeadset(
     @Volatile var answers: Boolean = true
 
     /**
+     * What [carryingAudio] says, which is the sign the client uses to skip an attempt altogether.
+     *
+     * A fake answers true by default, since it stands for a headset that is there and answering.
+     */
+    @Volatile var carriesAudio: Boolean = true
+
+    /**
      * When false the handshake completes but the questions about the headset itself go unanswered,
      * which is how a model with no device-info command behaves.
      */
@@ -77,6 +84,8 @@ internal class FakeHeadset(
     fun pushedCountOf(command: Int): Int = pushed.count { it == command }
 
     @Volatile private var link: Link? = null
+
+    override fun carryingAudio(device: BluetoothDevice): Boolean = carriesAudio
 
     override suspend fun open(device: BluetoothDevice): HeadsetTransport {
         openAttempts.incrementAndGet()

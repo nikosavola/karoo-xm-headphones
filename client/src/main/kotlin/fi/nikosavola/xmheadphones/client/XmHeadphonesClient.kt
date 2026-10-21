@@ -77,6 +77,16 @@ public class XmHeadphonesClient private constructor(private val context: Context
     public var lingerMillis: Long = DEFAULT_LINGER_MS
 
     /**
+     * How often a paired headset that is carrying no audio is looked at again.
+     *
+     * The check is a binder call, so it costs nothing on the radio. It is short because a rider
+     * waits for the headset's battery once they switch it on, and long enough that a ride with the
+     * headset off is not a wakeup a second. A caller with a battery to spare can shorten it.
+     */
+    @Volatile
+    public var absentProbeMillis: Long = DEFAULT_ABSENT_PROBE_MS
+
+    /**
      * How the bytes reach the headset.
      *
      * The classic serial profile, unless a caller has another way to the same headset. A test sets
@@ -87,6 +97,12 @@ public class XmHeadphonesClient private constructor(private val context: Context
      */
     @Volatile
     public var transport: HeadsetTransportFactory = RfcommTransport
+
+    init {
+        // The default transport asks the platform whether a paired device is carrying audio, and
+        // that question needs a context. A caller's own transport answers for itself.
+        if (transport === RfcommTransport) RfcommTransport.attach(context)
+    }
 
     /** Address of the headset this client is locked to, or null until one has been found. */
     public val savedAddress: String?
@@ -229,6 +245,21 @@ public class XmHeadphonesClient private constructor(private val context: Context
                 _state.update { it.copy(lastError = null) }
             }
             lastAttempted = device.address
+            // A headset that is off, asleep or out of range cannot answer, and opening a channel to
+            // it costs the radio the whole connect timeout rather than the microsecond this check
+            // takes. The rider's music needs the audio link anyway, so a headset that is in use
+            // has it and one that does not is not going to answer. A ride spent with the headset
+            // switched off must not page the radio on a one second cycle for hours.
+            if (!carryingAudio(device)) {
+                Timber.d("${device.address} carries no audio; waiting for it to come back")
+                setLink(HeadphonesLink.Searching)
+                _state.update { it.copy(lastError = HeadsetProblem.NotConnected) }
+                failedAttempts = 0
+                // The other paired devices get their turn: one that is on could be among them.
+                candidateIndex++
+                delay(absentProbeMillis)
+                continue
+            }
             setLink(HeadphonesLink.Connecting)
             val connected =
                 try {
@@ -247,16 +278,20 @@ public class XmHeadphonesClient private constructor(private val context: Context
                 }
             // Only a device that would not connect is passed over. One that did and then dropped is
             // the one the rider is wearing, so the next attempt goes back to it.
-            if (!connected) candidateIndex++
+            if (connected) {
+                failedAttempts = 0
+            } else {
+                candidateIndex++
+            }
             // The battery stays: it was true a moment ago, and a screen showing it beats a blank one.
             // Everything else only the headset can answer for.
             _state.update { it.copy(link = HeadphonesLink.Searching) }
-            // Without a growing gap, a headset that answers but refuses the connection is retried
-            // every second for as long as anything holds this client, with the radio on throughout.
-            // Once something has connected the gap stays short, because a dropped link is worth
-            // getting back promptly.
-            failedAttempts = if (hasConnected) 0 else failedAttempts + 1
-            delay(if (failedAttempts == 0) RETRY_DELAY_MS else retryDelayMillis(failedAttempts))
+            // A dropped link is worth getting back promptly, so the first attempts after one stay a
+            // second apart. A headset that stays away is another matter: the gap doubles from there
+            // to [MAX_RETRY_DELAY_MS], which is what keeps a walk out of range from costing the
+            // radio a connection attempt every second for the rest of the ride.
+            failedAttempts++
+            delay(retryDelayMillis(failedAttempts))
         }
     }
 
@@ -302,6 +337,21 @@ public class XmHeadphonesClient private constructor(private val context: Context
                 Timber.w("The transport could not tell whether ${device.address} is reachable: ${it.message}")
             }
             .getOrDefault(false)
+
+    /**
+     * Whether the audio link to [device] is up, which is the cheapest sign that it would answer.
+     *
+     * A transport that throws is a broken one rather than a headset that is not there, so the
+     * answer that keeps the loop honest is to try the connection rather than to skip it.
+     */
+    private fun carryingAudio(device: BluetoothDevice): Boolean =
+        runCatching { transport.carryingAudio(device) }
+            .onFailure {
+                Timber.w(
+                    "The transport could not tell whether ${device.address} carries audio: ${it.message}",
+                )
+            }
+            .getOrDefault(true)
 
     /**
      * Why a paired device could not be opened.
@@ -467,12 +517,26 @@ public class XmHeadphonesClient private constructor(private val context: Context
 
         private const val PRECONDITION_POLL_MS = 5_000L
         private const val PAIRING_POLL_MS = 10_000L
-        private const val RETRY_DELAY_MS = 1_000L
-        private const val MAX_RETRY_DELAY_MS = 30_000L
 
-        /** Doubles the gap per failed attempt, up to [MAX_RETRY_DELAY_MS]. */
-        private fun retryDelayMillis(failedAttempts: Int): Long =
-            (RETRY_DELAY_MS shl (failedAttempts - 1).coerceIn(0, 15)).coerceAtMost(MAX_RETRY_DELAY_MS)
+        /** The default for [absentProbeMillis]. */
+        public const val DEFAULT_ABSENT_PROBE_MS: Long = 15_000L
+
+        private const val RETRY_DELAY_MS = 1_000L
+
+        /** How many attempts after a failure stay at [RETRY_DELAY_MS] before the gap starts to grow. */
+        private const val QUICK_RETRIES = 4
+
+        /** A headset that has been away this long is looked for once every five minutes. */
+        private const val MAX_RETRY_DELAY_MS = 300_000L
+
+        /** [RETRY_DELAY_MS] for the first [QUICK_RETRIES], then doubling up to [MAX_RETRY_DELAY_MS]. */
+        internal fun retryDelayMillis(failedAttempts: Int): Long =
+            if (failedAttempts <= QUICK_RETRIES) {
+                RETRY_DELAY_MS
+            } else {
+                (RETRY_DELAY_MS shl (failedAttempts - QUICK_RETRIES - 1).coerceIn(0, 16))
+                    .coerceAtMost(MAX_RETRY_DELAY_MS)
+            }
 
         /** The default for [lingerMillis], sized for a device with a battery to spare. */
         public const val DEFAULT_LINGER_MS: Long = 120_000L

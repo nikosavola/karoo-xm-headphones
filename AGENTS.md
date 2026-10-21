@@ -27,6 +27,10 @@ and client libraries behind it.
 - The app is XM Headphones, but names for the wire format keep Sony in them (`SonyRequest`,
   `SonySession`, `SonyCapabilities`), because it is Sony's protocol they describe. Only the app's own
   names take `XmHeadphones`.
+- The client only opens the control channel while a headset is carrying audio, since paging one that
+  is switched off costs the radio the whole connect timeout. The Karoo answers `profile not
+  supported` to the per-device profile state, so `RfcommTransport` falls back to the adapter-wide
+  one, and a transport that cannot answer at all is tried rather than skipped.
 
 ## Build
 
