@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.drawable.ColorDrawable
 import android.view.ContextThemeWrapper
 import androidx.test.core.app.ApplicationProvider
+import androidx.core.graphics.ColorUtils
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -60,5 +61,26 @@ class AppThemeTest {
             context.getColor(R.color.app_background),
             (window as ColorDrawable).color,
         )
+    }
+
+    /**
+     * The window follows the platform's night mode, which Karoo sets itself by time of day.
+     *
+     * Both halves are pinned, because a resource left without a night variant passes the test above
+     * at every hour and still flashes the wrong colour on half the rides.
+     */
+    @Test
+    @Config(qualifiers = "night")
+    fun `the window is dark when the platform is at night`() {
+        val ground = ColorUtils.calculateLuminance(context.getColor(R.color.app_background))
+
+        assertTrue("the night ground is at luminance $ground", ground < 0.1)
+    }
+
+    @Test
+    fun `the window is light in daylight`() {
+        val ground = ColorUtils.calculateLuminance(context.getColor(R.color.app_background))
+
+        assertTrue("the day ground is at luminance $ground", ground > 0.8)
     }
 }

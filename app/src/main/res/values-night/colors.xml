@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The dark half of the palette, which is Sound Connect's own. Karoo switches the platform's
+         night mode by time of day, so this is what a rider sees on an evening ride. -->
+    <color name="app_background">#121212</color>
+</resources>

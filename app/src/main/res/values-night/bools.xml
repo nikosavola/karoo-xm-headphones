@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- White icons, since the status bar takes the dark background here. -->
+    <bool name="window_light_status_bar">false</bool>
+</resources>

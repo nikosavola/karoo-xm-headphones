@@ -12,5 +12,9 @@
     -->
     <style name="Theme.XmHeadphones" parent="android:Theme.DeviceDefault.NoActionBar">
         <item name="android:windowBackground">@color/app_background</item>
+        <!-- The platform's own status bar would stay black over a light screen, which leaves a band
+             across the top of it. Both resources have a night variant, so the band follows. -->
+        <item name="android:statusBarColor">@color/app_background</item>
+        <item name="android:windowLightStatusBar">@bool/window_light_status_bar</item>
     </style>
 </resources>

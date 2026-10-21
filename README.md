@@ -53,8 +53,9 @@ words.
 
 These are the real composables at 480x800, with values a headset would report, not drawings of the
 screen. Each state is set directly rather than reached by driving a headset, which is what makes an
-image of a state reproducible. The palette is Sound Connect's, a near black screen with an amber
-accent, so a rider who set their headset up in Sony's app recognises the controls.
+image of a state reproducible. The dark palette is Sound Connect's, a near black screen with an amber
+accent, so a rider who set their headset up in Sony's app recognises the controls. The screen follows
+Karoo's own day/night setting, so in daylight the same accent is drawn on a warm light ground.
 
 - Every test checks the screen before capturing it: the texts, and, in the states that have them, that
   the slider and the switch exist, which chip is selected, and that no chip wrapped its label. The

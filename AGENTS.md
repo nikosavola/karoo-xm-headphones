@@ -122,6 +122,11 @@ the app does not use at launch and behind the Android 12 splash. The launcher ic
 Karoo's launcher rather than by this app, so the test renders it and measures where the glyph lands
 in the 72dp an adaptive icon keeps clear of whatever mask it is cut with.
 
+The theme follows the platform's night mode, which Karoo sets itself by time of day. The screenshot
+tests pin night so the committed images stay comparable, and one test renders in daylight and reads
+the ground back from its pixels, since a screen stuck on the dark palette passes every text
+assertion.
+
 The render is 480x800 at 280 dpi, set by `@Config(qualifiers = ...)`, on API 33. The Karoo in hand
 reports the same size at 300 dpi and API 32, so its viewport is a little narrower and its platform
 older than the committed images assume. One test overrides the qualifiers to the Karoo's own width

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
@@ -71,7 +72,7 @@ import org.robolectric.annotation.GraphicsMode
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [33], qualifiers = "w274dp-h457dp-280dpi")
+@Config(sdk = [33], qualifiers = "w274dp-h457dp-night-280dpi")
 class ControlScreenScreenshotTest {
     @get:Rule val compose = createComposeRule()
 
@@ -102,6 +103,29 @@ class ControlScreenScreenshotTest {
     }
 
     /**
+     * The screen in daylight, which is what Karoo sets outside its own night hours.
+     *
+     * No image is committed: the README's are the dark ones. What this pins is that the light
+     * palette is drawn at all, since a screen stuck on the dark ground passes every text assertion
+     * in the rest of this file.
+     */
+    @Test
+    @Config(qualifiers = "w274dp-h457dp-notnight-280dpi")
+    fun `in daylight the screen is drawn on a light ground`() {
+        render(
+            connected(
+                noiseCancelling = NoiseCancelling.Ambient(AmbientLevel.clamped(14), focusOnVoice = false),
+                equalizerPreset = EqualizerPreset.Rock,
+            ),
+        ) {}
+
+        shows("Headset battery", "Noise cancelling")
+
+        val ground = compose.onNodeWithTag(SCREEN).captureToImage().toPixelMap()[1, 1].luminance()
+        assertTrue("the ground is at luminance $ground, which is not a daylight one", ground > 0.8f)
+    }
+
+    /**
      * The chip rows at the width the Karoo itself has.
      *
      * The committed images are 274dp wide. The Karoo reports the same 480x800 at 300 dpi, which is
@@ -110,7 +134,7 @@ class ControlScreenScreenshotTest {
      * actually sees. No image is written: the committed ones stay at the dpi they were recorded at.
      */
     @Test
-    @Config(qualifiers = "w256dp-h427dp-300dpi")
+    @Config(qualifiers = "w256dp-h427dp-night-300dpi")
     fun `the chip rows still fit on one line at the Karoo's own width`() {
         render(
             connected(
@@ -278,7 +302,7 @@ class ControlScreenScreenshotTest {
      * write: it is the headset's or the platform's own words, and a long one is possible.
      */
     @Test
-    @Config(qualifiers = "w256dp-h427dp-300dpi")
+    @Config(qualifiers = "w256dp-h427dp-night-300dpi")
     fun `what a link that is down says fits the Karoo's own width`() {
         render(
             XmHeadphonesState(
