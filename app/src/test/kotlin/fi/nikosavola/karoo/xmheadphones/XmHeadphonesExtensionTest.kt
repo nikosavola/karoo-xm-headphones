@@ -125,7 +125,9 @@ class XmHeadphonesExtensionTest {
         awaitSearch()
 
         battery.await(10_000) { it is StreamState.Searching }
-        assertTrue("the extension never asked for the headset", headset.openAttempts.get() > 0)
+        // Connecting reads as Searching too, and it is published before the transport is asked, so
+        // the attempt itself is what has to be waited for.
+        karoo.awaitValue { true.takeIf { headset.openAttempts.get() > 0 } }
     }
 
     @Test
