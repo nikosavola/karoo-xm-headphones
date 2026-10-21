@@ -28,7 +28,6 @@ import io.hammerhead.karooext.models.InRideAlert
 import io.hammerhead.karooext.models.RideProfile
 import io.hammerhead.karooext.models.StreamState
 import io.hammerhead.karooext.models.ViewConfig
-import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.LinkedBlockingQueue
