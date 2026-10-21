@@ -47,6 +47,9 @@ internal object FieldIds {
     const val BATTERY = "battery"
     const val AMBIENT_LEVEL = "ambient-level"
     const val NOISE_CANCELLING = "noise-cancelling"
+
+    /** Every declared field, for matching a ride profile against them. */
+    val ALL = listOf(BATTERY, NOISE_CANCELLING, AMBIENT_LEVEL)
 }
 
 /**
@@ -231,6 +234,4 @@ internal fun noiseCancellingLabel(context: Context, state: XmHeadphonesState): S
 
 /** Wire ids of every declared field, for ride-profile matching. */
 internal fun dataTypeIdsOf(extension: String): List<String> =
-    listOf(FieldIds.BATTERY, FieldIds.NOISE_CANCELLING, FieldIds.AMBIENT_LEVEL).map {
-        DataType.dataTypeId(extension, it)
-    }
+    FieldIds.ALL.map { DataType.dataTypeId(extension, it) }

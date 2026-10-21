@@ -107,11 +107,14 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_N
             }
     }
 
+    /** Built once: a profile event walks every element of every page against it. */
+    private val fieldTypeIds by lazy { dataTypeIdsOf(extension) }
+
     private fun onActiveProfile(profile: RideProfile) {
         val wanted =
             profile.pages.any { page ->
                 page.elements.any { element ->
-                    dataTypeIdsOf(extension).any { element.dataTypeId.startsWith(it) }
+                    fieldTypeIds.any { element.dataTypeId.startsWith(it) }
                 }
             }
         Timber.i("Active profile \"${profile.name}\" shows a headphone field: $wanted")
