@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
@@ -236,7 +237,12 @@ public class XmHeadphonesClient private constructor(private val context: Context
                     throw cancellation
                 } catch (failure: Exception) {
                     Timber.w("Connection ended: ${failure.message}")
-                    _state.update { it.copy(lastError = failure.message) }
+                    _state.update {
+                        it.copy(
+                            lastError =
+                                HeadsetProblem.Platform(failure.message ?: "the connection failed"),
+                        )
+                    }
                     false
                 }
             // Only a device that would not connect is passed over. One that did and then dropped is
@@ -297,10 +303,43 @@ public class XmHeadphonesClient private constructor(private val context: Context
             }
             .getOrDefault(false)
 
+    /**
+     * Why a paired device could not be opened.
+     *
+     * The exception is the same whether the headset is asleep or is not a Sony one, so it cannot say
+     * which. What can is whether the device already carries audio on this phone: a headset that is
+     * on and in reach is connected for sound, so a channel that will not open means it does not run
+     * Sony's protocol rather than that it is switched off.
+     */
+    @SuppressLint("MissingPermission") // hasPermissions ran at the top of the loop
+    private fun unopened(device: BluetoothDevice): HeadsetProblem {
+        val carryingAudio =
+            runCatching {
+                val manager =
+                    context.getSystemService(BluetoothManager::class.java) ?: return@runCatching false
+                manager.getConnectionState(device, BluetoothProfile.A2DP) ==
+                    BluetoothProfile.STATE_CONNECTED ||
+                    manager.getConnectionState(device, BluetoothProfile.HEADSET) ==
+                        BluetoothProfile.STATE_CONNECTED
+            }
+                .getOrDefault(false)
+        return if (carryingAudio) HeadsetProblem.NotSony else HeadsetProblem.NotConnected
+    }
+
     /** False when the headset never answered, which is what moves the search on to the next one. */
     private suspend fun runSession(device: BluetoothDevice): Boolean {
         forgetTheLastHeadsetIfThisIsADifferentOne(device)
-        val session = SonySession(transport.open(device))
+        val pipe =
+            try {
+                transport.open(device)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (failure: Exception) {
+                Timber.w("The headset did not answer: ${failure.message}")
+                _state.update { it.copy(lastError = unopened(device)) }
+                return false
+            }
+        val session = SonySession(pipe)
         val collector = scope.launch {
             session.responses.collect { response -> apply(response) }
         }
@@ -325,6 +364,16 @@ public class XmHeadphonesClient private constructor(private val context: Context
                     )
                 }
                 running.join()
+            }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: Exception) {
+            // The channel is Sony's, so whatever answered on it is a Sony device. A headset that
+            // refuses over a disabled command table, or one that drops mid-session, has its own
+            // words for it and they are the only thing that tells the two apart.
+            Timber.w("The session ended: ${failure.message}")
+            _state.update {
+                it.copy(lastError = HeadsetProblem.Platform(failure.message ?: "the link dropped"))
             }
         } finally {
             // Only if this is still the session in use. A caller that comes back after the linger can

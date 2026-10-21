@@ -45,6 +45,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import fi.nikosavola.xmheadphones.client.HeadphonesLink
+import fi.nikosavola.xmheadphones.client.HeadsetProblem
 import fi.nikosavola.xmheadphones.client.XmHeadphonesState
 import fi.nikosavola.xmheadphones.protocol.AmbientLevel
 import fi.nikosavola.xmheadphones.protocol.BatteryReading
@@ -176,13 +177,20 @@ private fun Connection(state: XmHeadphonesState, onAskForPermissions: () -> Unit
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        // The headset's own words for whatever went wrong, which is the difference between "table 1
-        // disabled" and a channel that will not open. The client keeps it for this line and nothing
-        // else, so without it a refused headset is a screen that only says it is waiting.
+        // What went wrong, in words a rider can act on. The client says whether nothing answered or
+        // something that is not a Sony headset did; the platform's own message is kept for the rest,
+        // because some failures only it can explain.
         if (!live) {
-            state.lastError?.let { error ->
+            state.lastError?.let { problem ->
                 Text(
-                    stringResource(R.string.settings_last_error, error),
+                    when (problem) {
+                        HeadsetProblem.NotConnected ->
+                            stringResource(R.string.settings_no_headset_connected)
+                        HeadsetProblem.NotSony ->
+                            stringResource(R.string.settings_not_a_sony_headset)
+                        is HeadsetProblem.Platform ->
+                            stringResource(R.string.settings_last_error, problem.message)
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )

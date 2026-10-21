@@ -34,6 +34,25 @@ public enum class HeadphonesLink {
 }
 
 /**
+ * What is wrong with the link, in terms a screen can say something useful about.
+ *
+ * The platform's exception does not separate "the headset is asleep" from "this is not a Sony
+ * headset": both arrive as the same failed socket. These do, because the client can tell whether the
+ * device it tried is already carrying audio on this phone. The platform's own words are kept for
+ * whatever else goes wrong, since only it can explain some failures.
+ */
+public sealed interface HeadsetProblem {
+    /** A paired device is there but nothing answered: it is switched off, out of reach, or asleep. */
+    public data object NotConnected : HeadsetProblem
+
+    /** Something is there, but it does not speak Sony's protocol. */
+    public data object NotSony : HeadsetProblem
+
+    /** Anything else, in the platform's own words. */
+    public data class Platform(public val message: String) : HeadsetProblem
+}
+
+/**
  * Everything the headset has told us, as one value.
  *
  * Each field is null or absent until the headset answers the question that fills it, and keeps its
@@ -69,7 +88,7 @@ public data class XmHeadphonesState(
      */
     public val lastFocusOnVoice: Boolean? = null,
     /** The last thing that went wrong, kept for a settings screen instead of logged and lost. */
-    public val lastError: String? = null,
+    public val lastError: HeadsetProblem? = null,
 ) {
     /** The number a ride screen shows. Earbuds report per bud, and the lower one runs out first. */
     public val batteryPercent: Int?

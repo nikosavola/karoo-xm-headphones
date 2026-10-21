@@ -5,11 +5,11 @@
 
     <!-- Data types -->
     <string name="battery">Headset Battery</string>
-    <string name="battery_description">Battery level of the connected Sony headset</string>
+    <string name="battery_description">Battery level of the connected Sony® headset</string>
     <string name="noise_cancelling">Noise Cancelling</string>
-    <string name="noise_cancelling_description">Current noise cancelling mode of the Sony headset</string>
+    <string name="noise_cancelling_description">Current noise cancelling mode of the Sony® headset</string>
     <string name="ambient_level">Ambient Level</string>
-    <string name="ambient_level_description">Ambient sound level of the Sony headset</string>
+    <string name="ambient_level_description">Ambient sound level of the Sony® headset</string>
 
     <!-- Bonus actions -->
     <string name="action_toggle_noise_cancelling">Toggle noise cancelling</string>
@@ -28,7 +28,7 @@
 
     <!-- Alerts -->
     <string name="alert_disconnected_title">Headset disconnected</string>
-    <string name="alert_disconnected_detail">Sony headphones are no longer connected</string>
+    <string name="alert_disconnected_detail">Sony® headphones are no longer connected</string>
 
     <!-- Settings screen -->
     <string name="settings_title">XM Headphones</string>
@@ -49,6 +49,8 @@
     <string name="settings_bluetooth_off">Bluetooth is off.</string>
     <string name="settings_pair_help">Pair the headset in Karoo\'s Bluetooth settings and it will be picked up here.</string>
     <string name="settings_last_error">Last error: %1$s</string>
+    <string name="settings_no_headset_connected">No Bluetooth headphones are connected. Switch the headset on and bring it near the Karoo.</string>
+    <string name="settings_not_a_sony_headset">That device did not answer Sony® protocol, so it is probably not a Sony® headset.</string>
     <string name="settings_grant_permission">Grant permission</string>
     <string name="settings_battery">Headset battery</string>
     <string name="settings_battery_percent">%1$d%%</string>

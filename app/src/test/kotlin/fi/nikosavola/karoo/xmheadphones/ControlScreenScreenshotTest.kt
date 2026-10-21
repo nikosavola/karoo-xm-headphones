@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import fi.nikosavola.xmheadphones.client.HeadphonesLink
+import fi.nikosavola.xmheadphones.client.HeadsetProblem
 import fi.nikosavola.xmheadphones.client.XmHeadphonesState
 import fi.nikosavola.xmheadphones.protocol.AmbientLevel
 import fi.nikosavola.xmheadphones.protocol.BatteryReading
@@ -233,11 +234,40 @@ class ControlScreenScreenshotTest {
         render(
             XmHeadphonesState(
                 link = HeadphonesLink.Searching,
-                lastError = "the headset never reported its protocol version",
+                lastError = HeadsetProblem.Platform("the headset never reported its protocol version"),
             ),
         ) {}
 
         shows("Last error: the headset never reported its protocol version")
+    }
+
+    /**
+     * The two failures the client can name are said in words a rider can act on.
+     *
+     * The platform's own message is the same failed socket whether the headset is asleep or is not a
+     * Sony one, so the client does the separating and the screen has to say which it was.
+     */
+    @Test
+    fun `a headset that is switched off is said plainly`() {
+        render(
+            XmHeadphonesState(
+                link = HeadphonesLink.Searching,
+                lastError = HeadsetProblem.NotConnected,
+            ),
+        ) {}
+
+        shows(
+            "No Bluetooth headphones are connected. Switch the headset on and bring it near the Karoo.",
+        )
+    }
+
+    @Test
+    fun `a device that is not a Sony headset is said plainly`() {
+        render(
+            XmHeadphonesState(link = HeadphonesLink.Searching, lastError = HeadsetProblem.NotSony),
+        ) {}
+
+        shows("That device did not answer Sony® protocol, so it is probably not a Sony® headset.")
     }
 
     /**
@@ -254,8 +284,10 @@ class ControlScreenScreenshotTest {
             XmHeadphonesState(
                 link = HeadphonesLink.NoPairedHeadset,
                 lastError =
-                    "the headset reports protocol V2 with table 1 disabled; the commands this " +
-                        "client sends all live there",
+                    HeadsetProblem.Platform(
+                        "the headset reports protocol V2 with table 1 disabled; the commands this " +
+                            "client sends all live there",
+                    ),
             ),
         ) {}
 

@@ -284,9 +284,9 @@ class XmHeadphonesClientTest {
         headsetWith(version = ProtocolVersion.V2, functions = FakeHeadset.V2_FUNCTIONS, table1Enabled = false)
         client.start()
 
-        val error = await { client.state.value.lastError }
+        val error = await { (client.state.value.lastError as? HeadsetProblem.Platform)?.message }
 
-        assertTrue("error was: $error", error.contains("table 1 disabled"))
+        assertTrue("error was: $error", error.orEmpty().contains("table 1 disabled"))
     }
 
     @Test
@@ -386,11 +386,13 @@ class XmHeadphonesClientTest {
         // open takes to fail, which is nothing.
         val error =
             await(describe = { "state=${client.state.value}\nlogs=${logs.takeLast(10)}" }) {
-                client.state.value.lastError?.takeIf {
-                    it.contains("nothing is behind this transport")
-                }
+                client.state.value.lastError?.takeIf { it == HeadsetProblem.NotConnected }
             }
-        assertEquals("nothing is behind this transport", error)
+        assertEquals(HeadsetProblem.NotConnected, error)
+        assertTrue(
+            "the transport's own words were not logged: $logs",
+            logs.any { it.contains("nothing is behind this transport") },
+        )
         assertTrue(
             "the transport was never asked: $logs",
             logs.any { it.contains("could not tell whether") },
@@ -557,7 +559,7 @@ class XmHeadphonesClientTest {
         client.start()
 
         try {
-            await { client.state.value.lastError?.takeIf { it.contains("the headset is gone") } }
+            await { client.state.value.lastError?.takeIf { it == HeadsetProblem.NotConnected } }
             // Both at once: the attempt that just failed also leaves a Connecting link behind, still
             // carrying its own error, and that one is not the state this is looking for.
             await(describe = { "state=${client.state.value}" }) {
