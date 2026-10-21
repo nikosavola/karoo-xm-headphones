@@ -9,8 +9,17 @@ package fi.nikosavola.xmheadphones.protocol
 public class MdrFrame(
     public val type: MdrDataType,
     public val sequence: Int,
-    public val payload: ByteArray,
+    payload: ByteArray,
 ) {
+    /**
+     * The bytes after the header.
+     *
+     * Copied on the way in, so the caller's array cannot change a frame that is already in a set or
+     * a map. The array this hands back is the frame's own, and modifying it breaks [equals] and
+     * [hashCode], so read it rather than write it.
+     */
+    public val payload: ByteArray = payload.copyOf()
+
     init {
         require(sequence in 0..0xFF) { "sequence is one byte, was $sequence" }
     }
