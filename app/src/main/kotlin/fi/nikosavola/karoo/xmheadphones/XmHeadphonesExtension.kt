@@ -3,7 +3,6 @@ package fi.nikosavola.karoo.xmheadphones
 import fi.nikosavola.xmheadphones.client.HeadphonesLink
 import fi.nikosavola.xmheadphones.client.RfcommTransport
 import fi.nikosavola.xmheadphones.client.XmHeadphonesClient
-import fi.nikosavola.xmheadphones.protocol.NoiseCancelling
 import io.hammerhead.karooext.KarooSystemService
 import io.hammerhead.karooext.extension.KarooExtension
 import io.hammerhead.karooext.models.ActiveRideProfile
@@ -16,10 +15,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
 /**
@@ -172,24 +169,9 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_N
             }
             // A wait after a failure can be minutes long, and the press is a rider asking for the
             // change now. The loop is woken instead of sitting the wait out.
-            client.wake()
             try {
-                val link =
-                    withTimeoutOrNull(BORROW_TIMEOUT_MS) {
-                        client.state.first { it.link.isSettled() }
-                    }?.link
-                if (link != HeadphonesLink.Connected) {
-                    Timber.w("Nothing to toggle; the headset link is $link")
-                    return@launch
-                }
-                val next =
-                    if (client.state.value.noiseCancelling is NoiseCancelling.Cancelling) {
-                        NoiseCancelling.Off
-                    } else {
-                        NoiseCancelling.Cancelling
-                    }
-                if (!client.setNoiseCancelling(next)) {
-                    Timber.w("The headset did not acknowledge the noise cancelling change")
+                if (!client.cycleNoiseCancelling(BORROW_TIMEOUT_MS)) {
+                    Timber.w("The headset did not take the noise cancelling change")
                 }
             } finally {
                 // The client lingers after the last hold, so a second press avoids reconnecting.

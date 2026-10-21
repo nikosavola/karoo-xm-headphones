@@ -1,14 +1,17 @@
 package fi.nikosavola.karoo.xmheadphones
 
 import android.content.Context
+import android.widget.RemoteViews
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.TextUnitType
 import androidx.compose.ui.unit.dp
 import androidx.glance.GlanceModifier
+import androidx.glance.action.clickable
 import androidx.glance.appwidget.ExperimentalGlanceRemoteViewsApi
 import androidx.glance.appwidget.GlanceRemoteViews
+import androidx.glance.appwidget.action.actionSendBroadcast
 import androidx.glance.color.ColorProvider
 import androidx.glance.layout.Alignment as GlanceAlignment
 import androidx.glance.layout.Box
@@ -149,15 +152,14 @@ internal class AmbientLevelDataType(client: XmHeadphonesClient, extension: Strin
 }
 
 /**
- * The mode has no number to show, so the extension draws the text itself.
+ * The mode has no number to show, so the extension draws the text itself. A tap asks for the next
+ * mode.
  */
-@OptIn(ExperimentalGlanceRemoteViewsApi::class)
 internal class NoiseCancellingDataType(
     private val client: XmHeadphonesClient,
     extension: String,
 ) : DataTypeImpl(extension, FieldIds.NOISE_CANCELLING) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val glance = GlanceRemoteViews()
 
     override fun startView(context: Context, config: ViewConfig, emitter: ViewEmitter) {
         Timber.d("Start the noise cancelling view")
@@ -168,7 +170,7 @@ internal class NoiseCancellingDataType(
                     .distinctUntilChanged()
                     .conflate()
                     .collect { label ->
-                        emitter.updateView(compose(context, config, label).remoteViews)
+                        emitter.updateView(noiseCancellingFieldViews(context, config, label))
                         // The emitter drops an update within 900 ms of the last and never re-sends
                         // it, so renders are spaced past that. Conflation turns a mid-gap change
                         // into the next render, so nothing is lost.
@@ -181,12 +183,34 @@ internal class NoiseCancellingDataType(
         }
     }
 
-    private suspend fun compose(context: Context, config: ViewConfig, label: String) =
-        glance.compose(context, DpSize.Unspecified) {
-            Box(
-                modifier = GlanceModifier.fillMaxSize().padding(4.dp),
-                contentAlignment = GlanceAlignment.Center,
-            ) {
+    private companion object {
+        const val MIN_RENDER_INTERVAL_MS = 1_000L
+    }
+}
+
+/**
+ * The ride field's RemoteViews, drawn by Karoo in its own process.
+ *
+ * A tap is a broadcast back to [NoiseCancellingTapReceiver], since RemoteViews cannot call into
+ * this process. The profiles app draws the field in preview mode too, where the tap has to stay
+ * off the way, or the rider cannot replace the field.
+ */
+@OptIn(ExperimentalGlanceRemoteViewsApi::class)
+internal suspend fun noiseCancellingFieldViews(
+    context: Context,
+    config: ViewConfig,
+    label: String,
+): RemoteViews {
+    val root = GlanceModifier.fillMaxSize().padding(4.dp)
+    val clickable =
+        if (config.preview) {
+            root
+        } else {
+            root.clickable(actionSendBroadcast<NoiseCancellingTapReceiver>())
+        }
+    return GlanceRemoteViews()
+        .compose(context, DpSize.Unspecified) {
+            Box(modifier = clickable, contentAlignment = GlanceAlignment.Center) {
                 Text(
                     text = label,
                     style =
@@ -198,10 +222,7 @@ internal class NoiseCancellingDataType(
                 )
             }
         }
-
-    private companion object {
-        const val MIN_RENDER_INTERVAL_MS = 1_000L
-    }
+        .remoteViews
 }
 
 /**

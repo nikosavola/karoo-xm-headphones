@@ -12,7 +12,7 @@
     <string name="ambient_level_description">Ambient sound level of the Sony® headset</string>
 
     <!-- Bonus actions -->
-    <string name="action_toggle_noise_cancelling">Toggle noise cancelling</string>
+    <string name="action_toggle_noise_cancelling">Cycle noise cancelling</string>
 
     <!-- Ridden states -->
     <string name="nc_off">Off</string>

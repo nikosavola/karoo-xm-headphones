@@ -182,7 +182,7 @@ class XmHeadphonesExtensionTest {
     }
 
     @Test
-    fun `the controller action turns noise cancelling off with the slot the headset reports`() {
+    fun `the controller action moves from noise cancelling to ambient sound`() {
         headset.noiseCancelling = NoiseCancelling.Cancelling
         val host = karoo.host<XmHeadphonesExtension>()
         host.startStream(FieldIds.BATTERY)
@@ -192,11 +192,13 @@ class XmHeadphonesExtensionTest {
 
         host.bonusAction(XmHeadphonesExtension.ACTION_TOGGLE_NOISE_CANCELLING)
 
-        karoo.awaitValue { true.takeIf { headset.noiseCancelling is NoiseCancelling.Off } }
+        karoo.awaitValue {
+            true.takeIf { headset.noiseCancelling is NoiseCancelling.Ambient }
+        }
     }
 
     @Test
-    fun `the controller action turns noise cancelling back on`() {
+    fun `the controller action turns noise cancelling on from off`() {
         headset.noiseCancelling = NoiseCancelling.Off
         val host = karoo.host<XmHeadphonesExtension>()
         host.startStream(FieldIds.BATTERY)
@@ -221,7 +223,66 @@ class XmHeadphonesExtensionTest {
         // connection starts says Idle, not "still searching".
         host.bonusAction(XmHeadphonesExtension.ACTION_TOGGLE_NOISE_CANCELLING)
 
-        karoo.awaitValue { true.takeIf { headset.noiseCancelling is NoiseCancelling.Off } }
+        karoo.awaitValue {
+            true.takeIf { headset.noiseCancelling is NoiseCancelling.Ambient }
+        }
+    }
+
+    @Test
+    fun `a tap on the field moves through the modes`() {
+        headset.noiseCancelling = NoiseCancelling.Cancelling
+        val host = karoo.host<XmHeadphonesExtension>()
+        viewRecorder = host.startView(FieldIds.NOISE_CANCELLING, viewConfig())
+
+        karoo.system.setActiveRideProfile(profile(FieldIds.NOISE_CANCELLING))
+        connected()
+
+        tapField()
+        karoo.awaitValue {
+            true.takeIf { client.state.value.noiseCancelling is NoiseCancelling.Ambient }
+        }
+
+        tapField()
+        karoo.awaitValue {
+            true.takeIf { client.state.value.noiseCancelling is NoiseCancelling.Off }
+        }
+
+        tapField()
+        karoo.awaitValue {
+            true.takeIf { client.state.value.noiseCancelling is NoiseCancelling.Cancelling }
+        }
+    }
+
+    @Test
+    fun `two taps in quick succession take two steps`() {
+        headset.noiseCancelling = NoiseCancelling.Off
+        val host = karoo.host<XmHeadphonesExtension>()
+        viewRecorder = host.startView(FieldIds.NOISE_CANCELLING, viewConfig())
+
+        karoo.system.setActiveRideProfile(profile(FieldIds.NOISE_CANCELLING))
+        connected()
+
+        tapField()
+        tapField()
+
+        // Off takes one step to cancelling and the next to ambient. Two taps that both read the
+        // mode from before the first write would land on cancelling twice.
+        karoo.awaitValue {
+            true.takeIf { client.state.value.noiseCancelling is NoiseCancelling.Ambient }
+        }
+    }
+
+    @Test
+    fun `a tap connects on its own when nothing else holds the client`() {
+        // The field can outlive the extension's process, so the tap must not rely on a link the
+        // extension already opened. No host is created here and no profile is set.
+        headset.noiseCancelling = NoiseCancelling.Off
+
+        tapField()
+
+        karoo.awaitValue {
+            true.takeIf { headset.noiseCancelling is NoiseCancelling.Cancelling }
+        }
     }
 
     @Test
@@ -404,6 +465,10 @@ class XmHeadphonesExtensionTest {
             client.state.value.link.takeIf { it == HeadphonesLink.Connected }
         }
     }
+
+    /** What Karoo sends when a rider taps the field. */
+    private fun tapField() =
+        karoo.app.sendBroadcast(Intent(karoo.app, NoiseCancellingTapReceiver::class.java))
 
     /** Waits until the extension has asked for the headset, which is what opening the channel follows. */
     private fun awaitSearch() {

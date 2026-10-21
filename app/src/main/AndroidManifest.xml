@@ -33,6 +33,12 @@
             </intent-filter>
         </activity>
 
+        <!-- Karoo sends a tap on the noise cancelling field as a broadcast. The PendingIntent is
+             created here, so the receiver can stay unexported. -->
+        <receiver
+            android:name=".NoiseCancellingTapReceiver"
+            android:exported="false" />
+
         <service
             android:name=".XmHeadphonesExtension"
             android:exported="true"

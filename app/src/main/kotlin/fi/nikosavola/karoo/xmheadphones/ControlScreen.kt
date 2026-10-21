@@ -464,7 +464,7 @@ private fun NoiseControlSection(
                 selected = ambient != null,
                 index = 2,
                 enabled = live,
-                onClick = { apply(NoiseCancelling.Ambient(ambientLevelOf(base), focusOnVoiceOf(base))) },
+                onClick = { apply(NoiseCancelling.Ambient(base.ambientLevel(), base.focusOnVoice())) },
             )
         }
 
@@ -482,7 +482,7 @@ private fun NoiseControlSection(
                     // The step the rider stopped on, not the previous frame's.
                     val steps = dragging ?: ambient.level.steps
                     dragging = null
-                    apply(NoiseCancelling.Ambient(AmbientLevel.clamped(steps), focusOnVoiceOf(base)))
+                    apply(NoiseCancelling.Ambient(AmbientLevel.clamped(steps), base.focusOnVoice()))
                 },
                 valueRange = AmbientLevel.MIN_STEPS.toFloat()..AmbientLevel.MAX_STEPS.toFloat(),
                 steps = AmbientLevel.MAX_STEPS - AmbientLevel.MIN_STEPS - 1,
@@ -496,7 +496,7 @@ private fun NoiseControlSection(
                     enabled = live,
                     checked = ambient.focusOnVoice,
                     onCheckedChange = { voice ->
-                        apply(NoiseCancelling.Ambient(ambientLevelOf(base), voice))
+                        apply(NoiseCancelling.Ambient(base.ambientLevel(), voice))
                     },
                 )
             }
@@ -623,16 +623,3 @@ private const val LOW_BATTERY_PERCENT = 20
 /** On the gauge, so a test can read the colour the level put it in. */
 internal const val BATTERY_GAUGE = "battery-gauge"
 
-/** Where the slider starts when no one has named a level. */
-private val DEFAULT_AMBIENT_LEVEL: AmbientLevel = AmbientLevel.clamped(10)
-
-/** The level to come back to. Ambient's own when on, else the rider's last. */
-private fun ambientLevelOf(state: XmHeadphonesState): AmbientLevel =
-    (state.noiseCancelling as? NoiseCancelling.Ambient)?.level
-        ?: state.lastAmbientLevel
-        ?: DEFAULT_AMBIENT_LEVEL
-
-private fun focusOnVoiceOf(state: XmHeadphonesState): Boolean =
-    (state.noiseCancelling as? NoiseCancelling.Ambient)?.focusOnVoice
-        ?: state.lastFocusOnVoice
-        ?: false
