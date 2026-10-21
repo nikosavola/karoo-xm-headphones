@@ -127,6 +127,12 @@ internal class FakeHeadset(
             .lastOrNull { it.type != MdrDataType.Ack && it.payload.firstOrNull() == NC_SET.toByte() }
             ?.payload
 
+    /** The last equalizer write, as the headset read it. */
+    fun lastEqualizerWrite(): ByteArray? =
+        receivedFrames
+            .lastOrNull { it.type != MdrDataType.Ack && it.payload.firstOrNull() == EQ_SET.toByte() }
+            ?.payload
+
     fun pushNoiseCancelling(state: NoiseCancelling) {
         noiseCancelling = state
         send(command(NC_NTFY, noiseControlFields()))
@@ -392,6 +398,7 @@ internal class FakeHeadset(
         const val NC_SET = 0x68
         const val NC_NTFY = 0x69
         const val EQ_GET = 0x56
+        const val EQ_SET = 0x58
 
         /** Both versions' battery question, so a test can say which one went out. */
         val BATTERY_GET_COMMANDS = setOf(BATTERY_GET_V1, BATTERY_GET_V2)

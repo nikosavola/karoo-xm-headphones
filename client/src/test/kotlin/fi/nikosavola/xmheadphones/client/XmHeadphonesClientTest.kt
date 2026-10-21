@@ -215,6 +215,35 @@ class XmHeadphonesClientTest {
     }
 
     @Test
+    fun `a preset change is written in the slot the version keeps it in`() {
+        granted()
+        headsetWith()
+        connect()
+
+        assertTrue(command { client.setEqualizerPreset(EqualizerPreset.Rock) })
+
+        // Command, V1's slot, Rock, and no band steps: a preset sent with bands is dropped whole.
+        assertArrayEquals(hex("58010100"), await { headset.lastEqualizerWrite() })
+    }
+
+    @Test
+    fun `refreshing reads the battery and the noise control again`() {
+        granted()
+        headsetWith()
+        connect()
+        headset.batteryPercent = 55
+        headset.noiseCancelling = NoiseCancelling.Off
+
+        command { client.refresh() }
+
+        await {
+            client.state.value.takeIf {
+                it.batteryPercent == 55 && it.noiseCancelling == NoiseCancelling.Off
+            }
+        }
+    }
+
+    @Test
     fun `a notification arriving while a command is in flight does not stop it`() {
         granted()
         headsetWith()
