@@ -240,6 +240,8 @@ internal class FakeHeadset(
                 send(command(NC_NTFY, noiseControlFields()))
             }
             EQ_GET -> send(command(0x57, equalizerReply()))
+            // Applied rather than only acknowledged, so a test can read back what it wrote.
+            EQ_SET -> payload.getOrNull(2)?.let { equalizerPreset = it.toInt() and 0xFF }
             else -> Unit // A command this fake does not model is acknowledged and otherwise ignored.
         }
     }

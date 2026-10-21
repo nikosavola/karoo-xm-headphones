@@ -16,6 +16,8 @@ import fi.nikosavola.xmheadphones.protocol.NoiseCancelling
 import fi.nikosavola.xmheadphones.protocol.ProtocolTable
 import fi.nikosavola.xmheadphones.protocol.ProtocolVersion
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.CoroutineScope
@@ -224,6 +226,20 @@ class XmHeadphonesClientTest {
 
         // Command, V1's slot, Rock, and no band steps: a preset sent with bands is dropped whole.
         assertArrayEquals(hex("58010100"), await { headset.lastEqualizerWrite() })
+        assertEquals(EqualizerPreset.Rock.wire, headset.equalizerPreset)
+    }
+
+    @Test
+    fun `a V2 preset change is written in the slot V2 keeps it in`() {
+        granted()
+        headsetWith(version = ProtocolVersion.V2, functions = FakeHeadset.V2_FUNCTIONS)
+        connect()
+
+        assertTrue(command { client.setEqualizerPreset(EqualizerPreset.Rock) })
+
+        // V2's slot is 0x00. Writing V1's 0x01 there would be taken for a Clear Bass level, which
+        // the headset accepts without complaint, so only the bytes can say which one went out.
+        assertArrayEquals(hex("58000100"), await { headset.lastEqualizerWrite() })
     }
 
     @Test
@@ -426,6 +442,48 @@ class XmHeadphonesClientTest {
             "the transport was never asked: $logs",
             logs.any { it.contains("could not tell whether") },
         )
+    }
+
+    /**
+     * A transport whose cleanup throws, which the published interface allows and no fake of this
+     * repo does. The session closes the pipe before the loop goes round again, so that failure used
+     * to end the reconnect loop itself.
+     */
+    @Test
+    fun `a transport whose close throws does not end the loop`() {
+        granted()
+        headsetWith()
+        var closes = 0
+        client.transport =
+            object : HeadsetTransportFactory {
+                override suspend fun open(device: BluetoothDevice): HeadsetTransport {
+                    val pipe = headset.open(device)
+                    return object : HeadsetTransport {
+                        override val input: InputStream get() = pipe.input
+                        override val output: OutputStream get() = pipe.output
+
+                        override fun close() {
+                            pipe.close()
+                            closes++
+                            throw IOException("the transport refused to close")
+                        }
+                    }
+                }
+            }
+
+        connect()
+
+        headset.disconnect()
+        await { client.state.value.link.takeIf { it == HeadphonesLink.Searching } }
+
+        val reconnected =
+            await(describe = { "no reconnect after $closes closes: state=${client.state.value}" }) {
+                client.state.value.takeIf {
+                    it.link == HeadphonesLink.Connected && it.battery != null
+                }
+            }
+
+        assertEquals(80, reconnected.batteryPercent)
     }
 
     @Test
