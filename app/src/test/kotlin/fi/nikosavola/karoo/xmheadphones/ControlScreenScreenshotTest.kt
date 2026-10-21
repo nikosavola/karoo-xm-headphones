@@ -603,6 +603,42 @@ class ControlScreenScreenshotTest {
         compose.onNodeWithText("Ambient").assertIsNotSelected()
     }
 
+    /**
+     * A rider can make two changes before the headset answers either. A refusal belongs to the write
+     * that was refused, so it must not take the newer guess down with it.
+     */
+    @Test
+    fun `a refused change does not take back a newer one`() {
+        val pending = mutableListOf<Pair<NoiseCancelling, (Boolean) -> Unit>>()
+        val state =
+            mutableStateOf(
+                connected(noiseCancelling = NoiseCancelling.Cancelling, equalizerPreset = null),
+            )
+        compose.setContent {
+            XmHeadphonesTheme {
+                Box(modifier = Modifier.fillMaxSize().testTag(SCREEN)) {
+                    ControlScreen(state.value, { next, done -> pending += next to done }, {}, {}, {})
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Ambient").performClick()
+        compose.onAllNodesWithText("Off").onFirst().performClick()
+        compose.waitForIdle()
+        assertEquals(2, pending.size)
+
+        // The first write is refused. The second is still the rider's latest change.
+        pending[0].second(false)
+        compose.waitForIdle()
+        compose.onAllNodesWithText("Off").onFirst().assertIsSelected()
+
+        // Once that one is refused too, there is nothing left to show but what the headset reports.
+        pending[1].second(false)
+        compose.waitForIdle()
+        compose.onNodeWithText("NC").assertIsSelected()
+    }
+
     /** Focus on voice is a setting of the rider's, not of the mode they happen to be in. */
     @Test
     fun `focus on voice survives a trip through off and back`() {

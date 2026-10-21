@@ -436,7 +436,9 @@ private fun NoiseControlSection(
             // A write the headset never acknowledges leaves the state on the mode it last reported,
             // and that is the only thing that clears the guess. Without this the screen would keep
             // showing a mode the headset refused for the rest of the ride.
-            setNoiseCancelling(next) { accepted -> if (!accepted) intended = null }
+            // Only this write's guess goes. A refusal that lands after a newer change must not take
+            // that one back with it.
+            setNoiseCancelling(next) { accepted -> if (!accepted && intended == next) intended = null }
         }
 
         // The three states are one choice, so they are one control rather than three buttons. The
