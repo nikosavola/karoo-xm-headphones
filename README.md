@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/nikosavola/karoo-xm-headphones/actions/workflows/ci.yml/badge.svg)](https://github.com/nikosavola/karoo-xm-headphones/actions/workflows/ci.yml)
 
-A [Hammerhead Karoo](https://www.hammerhead.io/) extension for Sony headphones. It talks to the
+A [Hammerhead Karoo](https://www.hammerhead.io/) extension for Sony® headphones. It talks to the
 headset with Sony's own protocol and puts the controls from the Sound Connect app onto the Karoo.
 
 It works against a real headset: a WF-1000XM5 on a Karoo, over the headset's classic Bluetooth
@@ -40,8 +40,10 @@ means different things on different models.
 
 The same row says which wait the link is on: nothing paired, which is a step in Karoo's own Bluetooth
 settings rather than anything this app can do, or a paired headset that has not answered yet. Under
-it goes the last error the client saw, in the headset's or the platform's own words. That is where a
-refused connection shows up, rather than being logged and lost.
+it goes what went wrong. Two failures are named rather than quoted: headphones that are not
+connected, and a paired device that is on but does not speak Sony's protocol. Anything else, a
+refused connection or a command table switched off, appears in the headset's or the platform's own
+words.
 
 ## Screenshots
 
@@ -224,5 +226,9 @@ nothing it reads leaves the device.
 
 Apache-2.0.
 
-Not affiliated with, endorsed by, or sponsored by Sony. Sony, WH-1000X and WF-1000X are trademarks
-of Sony Group Corporation, and Karoo is a trademark of Hammerhead.
+## Trademarks
+
+Sony and the WH-1000X and WF-1000X model names are trademarks or registered trademarks of Sony Group
+Corporation, and all rights in them belong to Sony. Karoo and Hammerhead are trademarks of
+Hammerhead. This project is not affiliated with, endorsed by, or sponsored by either company. All
+other trademarks are the property of their respective owners.
