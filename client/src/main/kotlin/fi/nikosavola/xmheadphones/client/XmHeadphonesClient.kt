@@ -250,7 +250,7 @@ public class XmHeadphonesClient private constructor(private val context: Context
             }
             lastOpenedAt = SystemClock.elapsedRealtime()
             setLink(HeadphonesLink.Connecting)
-            val connected = connect(device)
+            val connected = runSession(device)
             // Only a device that would not connect is passed over. One that did and then dropped is
             // the one the rider is wearing, so the next attempt goes back to it.
             if (connected) {
@@ -338,22 +338,6 @@ public class XmHeadphonesClient private constructor(private val context: Context
         pause(absentProbeMillis.coerceAtLeast(MIN_ABSENT_PROBE_MS))
         return true
     }
-
-    /** Runs one session to its end, answering whether the headset connected at all. */
-    private suspend fun connect(device: BluetoothDevice): Boolean =
-        try {
-            runSession(device)
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (failure: Exception) {
-            Timber.w("Connection ended: ${failure.message}")
-            _state.update {
-                it.copy(
-                    lastError = HeadsetProblem.Platform(failure.message ?: "the connection failed"),
-                )
-            }
-            false
-        }
 
     /**
      * The paired device to try out of [bonded], or null when none of them could be one.
