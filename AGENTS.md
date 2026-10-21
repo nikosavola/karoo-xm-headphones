@@ -94,10 +94,11 @@ used here, since the headset is reached over classic Bluetooth, and with it went
 suite could not run below SDK 33. That suite now runs at 32 and 34, the first being the platform the
 Karoo in hand reports.
 
-The README's screenshots are drawn by `ControlScreenScreenshotTest` as lossless WebP into
-`app/build/screenshots/`, never over the tracked copies, so a test run leaves the tree clean on any
-machine. `./gradlew :app:recordScreenshots` runs the tests and copies the result into
-`docs/screenshots/`, and is the only thing that writes there. CI renders them and reports a
+The README's screenshots are drawn by `ControlScreenScreenshotTest` and
+`NoiseCancellingFieldScreenshotTest` as lossless WebP into `app/build/screenshots/`, never over the
+tracked copies, so a test run leaves the tree clean on any machine. `./gradlew :app:recordScreenshots`
+runs the tests and copies the result into `docs/screenshots/`, and is the only thing that writes
+there. CI renders them and reports a
 disagreement rather than failing on it, because the committed images came from macOS and that runner
 has never been compared with it. Run it with the test task excluded and it copies nothing and still
 reports success, since Gradle skips an empty copy before its own actions, and the images are simply
