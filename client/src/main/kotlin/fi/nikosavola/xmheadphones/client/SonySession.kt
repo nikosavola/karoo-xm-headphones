@@ -146,7 +146,10 @@ internal class SonySession(
         scope.cancel()
         // Before the queue: a read already blocked in the pipe only comes out of it when the socket
         // under it goes away, and until it does the read loop cannot finish.
-        transport.close()
+        // A transport is a caller's own, so one that throws on close must not take down the loop
+        // that is cleaning up after it.
+        runCatching { transport.close() }
+            .onFailure { Timber.w("The transport did not close: ${it.message}") }
         incoming.close()
     }
 
