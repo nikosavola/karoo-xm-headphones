@@ -6,7 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -334,11 +333,7 @@ private fun LinkDot(link: HeadphonesLink) {
  */
 @Composable
 private fun Battery(reading: BatteryReading) {
-    val status =
-        when (reading) {
-            is BatteryReading.Single -> reading.status
-            is BatteryReading.LeftRight -> reading.lowest
-        }
+    val status = reading.status
     val colour =
         if (status.percent <= LOW_BATTERY_PERCENT) {
             MaterialTheme.colorScheme.error
@@ -520,21 +515,18 @@ private fun EqualizerSection(
             return
         }
         Text(state.equalizerPreset?.label ?: stringResource(R.string.settings_unknown))
-        // The protocol models twenty-one presets. A device cannot be asked which it has, and it
-        // silently ignores unknown ones, so the rest would do nothing on most headsets.
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            listOf(EqualizerPreset.Off, EqualizerPreset.Rock, EqualizerPreset.Pop, EqualizerPreset.Jazz)
-                .forEach { preset ->
-                    ModeChip(
-                        label = preset.label,
-                        selected = state.equalizerPreset == preset,
-                        enabled = state.link == HeadphonesLink.Connected,
-                        onClick = { setEqualizerPreset(preset) },
-                    )
-                }
+            OFFERED_PRESETS.forEach { preset ->
+                ModeChip(
+                    label = preset.label,
+                    selected = state.equalizerPreset == preset,
+                    enabled = state.link == HeadphonesLink.Connected,
+                    onClick = { setEqualizerPreset(preset) },
+                )
+            }
         }
     }
 }
@@ -610,12 +602,20 @@ private fun XmHeadphonesState.notReadyText(supported: Boolean, unsupported: Stri
 /** How many segments the noise control row is split into. */
 private const val MODE_COUNT = 3
 
+/**
+ * The presets worth a chip.
+ *
+ * The protocol models twenty-one. A device cannot be asked which it has and silently ignores unknown
+ * ones, so the rest would do nothing on most headsets.
+ */
+private val OFFERED_PRESETS =
+    listOf(EqualizerPreset.Off, EqualizerPreset.Rock, EqualizerPreset.Pop, EqualizerPreset.Jazz)
+
 /** Below this the gauge turns red, which is roughly the point a rider should start thinking about it. */
 private const val LOW_BATTERY_PERCENT = 20
 
 /** On the gauge, so a test can read the colour the level put it in. */
 internal const val BATTERY_GAUGE = "battery-gauge"
-
 
 /** Where the slider starts when no one has named a level. */
 private val DEFAULT_AMBIENT_LEVEL: AmbientLevel = AmbientLevel.clamped(10)

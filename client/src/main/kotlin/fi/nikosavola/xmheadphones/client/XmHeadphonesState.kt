@@ -92,12 +92,7 @@ public data class XmHeadphonesState(
 ) {
     /** The number a ride screen shows. Earbuds report per bud, and the lower one runs out first. */
     public val batteryPercent: Int?
-        get() =
-            when (val reading = battery) {
-                null -> null
-                is BatteryReading.Single -> reading.status.percent
-                is BatteryReading.LeftRight -> reading.lowest.percent
-            }
+        get() = battery?.status?.percent
 
     public val supportsNoiseCancelling: Boolean
         get() = capabilities?.noiseCancelling != null

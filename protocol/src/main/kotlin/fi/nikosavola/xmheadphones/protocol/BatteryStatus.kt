@@ -27,12 +27,14 @@ public enum class BatteryShape {
 
 /** A battery report. A ride screen has room for one number, earbuds answer per bud. */
 public sealed interface BatteryReading {
-    public data class Single(public val status: BatteryStatus) : BatteryReading
+    /** The number to show while riding: the single level, or the bud that runs out first. */
+    public val status: BatteryStatus
+
+    public data class Single(override val status: BatteryStatus) : BatteryReading
 
     public data class LeftRight(public val left: BatteryStatus, public val right: BatteryStatus) :
         BatteryReading {
-        /** The bud that runs out first, the number to show while riding. */
-        public val lowest: BatteryStatus
+        override val status: BatteryStatus
             get() = if (left.percent <= right.percent) left else right
     }
 }
