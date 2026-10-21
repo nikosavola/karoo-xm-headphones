@@ -233,12 +233,12 @@ public class XmHeadphonesClient private constructor(private val context: Context
             val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
             if (!hasPermissions()) {
                 setLink(HeadphonesLink.NoPermission)
-                delay(PRECONDITION_POLL_MS)
+                pause(PRECONDITION_POLL_MS)
                 continue
             }
             if (adapter == null || !adapter.isEnabled) {
                 setLink(HeadphonesLink.BluetoothOff)
-                delay(PRECONDITION_POLL_MS)
+                pause(PRECONDITION_POLL_MS)
                 continue
             }
             val bonded = runCatching { adapter.bondedDevices }
@@ -257,7 +257,7 @@ public class XmHeadphonesClient private constructor(private val context: Context
                     Timber.w("Could not read the paired devices: ${bonded.exceptionOrNull()?.message}")
                     setLink(HeadphonesLink.Searching)
                 }
-                delay(PAIRING_POLL_MS)
+                pause(PAIRING_POLL_MS)
                 continue
             }
             // Before the attempt is announced, so nothing can read a Connecting link beside the
