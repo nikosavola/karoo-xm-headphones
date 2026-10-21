@@ -18,6 +18,7 @@ import fi.nikosavola.xmheadphones.protocol.SonyResponse
 import java.io.IOException
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -48,8 +49,11 @@ import timber.log.Timber
  * frame this client cannot read is logged and acknowledged anyway, because a headset left
  * unacknowledged keeps resending it.
  */
-internal class SonySession(private val transport: HeadsetTransport) : AutoCloseable {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+internal class SonySession(
+    private val transport: HeadsetTransport,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) : AutoCloseable {
+    private val scope = CoroutineScope(SupervisorJob() + ioDispatcher)
 
     private val _capabilities = MutableStateFlow<SonyCapabilities?>(null)
     private val _responses =
@@ -242,7 +246,7 @@ internal class SonySession(private val transport: HeadsetTransport) : AutoClosea
         try {
             val buffer = ByteArray(READ_BUFFER_BYTES)
             while (true) {
-                val read = withContext(Dispatchers.IO) { transport.input.read(buffer) }
+                val read = withContext(ioDispatcher) { transport.input.read(buffer) }
                 if (read < 0) break
                 if (read == 0) continue
                 for (frame in assembler.feed(buffer.copyOf(read))) {
@@ -404,7 +408,7 @@ internal class SonySession(private val transport: HeadsetTransport) : AutoClosea
 
     private suspend fun writeFrame(frame: MdrFrame): Boolean = writeLock.withLock {
         try {
-            withContext(Dispatchers.IO) {
+            withContext(ioDispatcher) {
                 transport.output.write(MdrFrameCodec.encode(frame))
                 // The socket buffers, and an acknowledgement held in a buffer is one the headset is
                 // still waiting for.

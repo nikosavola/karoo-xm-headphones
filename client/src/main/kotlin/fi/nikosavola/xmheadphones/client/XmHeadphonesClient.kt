@@ -2,6 +2,7 @@ package fi.nikosavola.xmheadphones.client
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.content.Context
@@ -218,7 +219,7 @@ public class XmHeadphonesClient private constructor(private val context: Context
         session.readNoiseCancelling()
     }
 
-    @SuppressLint("MissingPermission") // hasPermissions ran at the top of the loop
+    @SuppressLint("MissingPermission") // awaitRadio checked the permission before the list is read
     private suspend fun runForever() {
         var failedAttempts = 0
         // Counted from the start rather than from zero, so a client that has just begun does not
@@ -230,82 +231,26 @@ public class XmHeadphonesClient private constructor(private val context: Context
         // headsets reads the first one's failure as the second one's, the one they are waiting on.
         var lastAttempted: String? = null
         while (true) {
-            val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
-            if (!hasPermissions()) {
-                setLink(HeadphonesLink.NoPermission)
-                pause(PRECONDITION_POLL_MS)
-                continue
-            }
-            if (adapter == null || !adapter.isEnabled) {
-                setLink(HeadphonesLink.BluetoothOff)
-                pause(PRECONDITION_POLL_MS)
-                continue
-            }
+            val adapter = awaitRadio() ?: continue
             val bonded = runCatching { adapter.bondedDevices }
-            val device = bonded.getOrNull()?.let { nextCandidate(it) }
-            if (device == null) {
-                // Nothing paired looks like a headset. There is no scan that could find one: the
-                // control channel only exists once the headset is paired, and pairing is the rider's
-                // own step in Karoo's Bluetooth settings. So this waits for one to appear.
-                //
-                // Reading the list can fail on its own, with the permission going away while this
-                // loop runs. That is not a list that turned out empty, and telling a rider to pair a
-                // headset they have already paired is worse than saying the link is still looking.
-                if (bonded.isSuccess) {
-                    setLink(HeadphonesLink.NoPairedHeadset)
-                } else {
-                    Timber.w("Could not read the paired devices: ${bonded.exceptionOrNull()?.message}")
-                    setLink(HeadphonesLink.Searching)
-                }
-                pause(PAIRING_POLL_MS)
-                continue
-            }
+            val device = awaitCandidate(bonded) ?: continue
             // Before the attempt is announced, so nothing can read a Connecting link beside the
             // failure of the headset that is not the one being connected to.
             if (lastAttempted != null && lastAttempted != device.address) {
                 _state.update { it.copy(lastError = null) }
             }
             lastAttempted = device.address
-            // A headset that is off, asleep or out of range cannot answer, and opening a channel to
-            // it costs the radio the whole connect timeout rather than the microsecond this check
-            // takes. The rider's music needs the audio link anyway, so a headset that is in use
-            // has it and one that does not is not going to answer. A ride spent with the headset
-            // switched off must not page the radio on a one second cycle for hours.
-            //
-            // A headset can also be on and answering while its audio goes elsewhere, so the guess
-            // is given one real attempt every GATE_REOPEN_MS. Without that, a wrong "no" would lock
-            // a headset out for the whole ride with nothing able to correct it.
             val sinceAttempt = SystemClock.elapsedRealtime() - lastOpenedAt
-            if (carryingAudio(device) == false && sinceAttempt < GATE_REOPEN_MS) {
-                Timber.d("${device.address} carries no audio; waiting for it to come back")
-                setLink(HeadphonesLink.Searching)
-                _state.update { it.copy(lastError = HeadsetProblem.NotConnected) }
+            if (awaitAudio(device, sinceAttempt)) {
                 // Only the device that has been failing gives up its backoff. Another device's
                 // failures are not this one's, and clearing them here would keep a second paired
                 // device on a one second retry cycle for as long as the third one stays off.
-                if (lastAttempted == device.address) failedAttempts = 0
-                // The other paired devices get their turn: one that is on could be among them.
-                candidateIndex++
-                pause(absentProbeMillis.coerceAtLeast(MIN_ABSENT_PROBE_MS))
+                failedAttempts = 0
                 continue
             }
             lastOpenedAt = SystemClock.elapsedRealtime()
             setLink(HeadphonesLink.Connecting)
-            val connected =
-                try {
-                    runSession(device)
-                } catch (cancellation: CancellationException) {
-                    throw cancellation
-                } catch (failure: Exception) {
-                    Timber.w("Connection ended: ${failure.message}")
-                    _state.update {
-                        it.copy(
-                            lastError =
-                                HeadsetProblem.Platform(failure.message ?: "the connection failed"),
-                        )
-                    }
-                    false
-                }
+            val connected = connect(device)
             // Only a device that would not connect is passed over. One that did and then dropped is
             // the one the rider is wearing, so the next attempt goes back to it.
             if (connected) {
@@ -324,6 +269,91 @@ public class XmHeadphonesClient private constructor(private val context: Context
             pause(retryDelayMillis(failedAttempts))
         }
     }
+
+    /**
+     * The adapter to try, or null after showing why there is nothing to try and waiting a poll.
+     *
+     * A missing adapter and one that is off read the same to a rider: this app cannot reach the
+     * radio.
+     */
+    @SuppressLint("MissingPermission") // hasPermissions is the first thing this checks
+    private suspend fun awaitRadio(): BluetoothAdapter? {
+        val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
+        if (!hasPermissions()) {
+            setLink(HeadphonesLink.NoPermission)
+            pause(PRECONDITION_POLL_MS)
+            return null
+        }
+        if (adapter == null || !adapter.isEnabled) {
+            setLink(HeadphonesLink.BluetoothOff)
+            pause(PRECONDITION_POLL_MS)
+            return null
+        }
+        return adapter
+    }
+
+    /**
+     * The paired device to try, or null after showing why there is none and waiting a poll.
+     *
+     * Nothing paired looks like a headset. There is no scan that could find one: the control channel
+     * only exists once the headset is paired, and pairing is the rider's own step in Karoo's
+     * Bluetooth settings. So this waits for one to appear.
+     */
+    private suspend fun awaitCandidate(bonded: Result<Set<BluetoothDevice>>): BluetoothDevice? {
+        val device = bonded.getOrNull()?.let { nextCandidate(it) }
+        if (device != null) return device
+        // Reading the list can fail on its own, with the permission going away while this loop runs.
+        // That is not a list that turned out empty, and telling a rider to pair a headset they have
+        // already paired is worse than saying the link is still looking.
+        if (bonded.isSuccess) {
+            setLink(HeadphonesLink.NoPairedHeadset)
+        } else {
+            Timber.w("Could not read the paired devices: ${bonded.exceptionOrNull()?.message}")
+            setLink(HeadphonesLink.Searching)
+        }
+        pause(PAIRING_POLL_MS)
+        return null
+    }
+
+    /**
+     * Whether to pass [device] over and wait, because its audio link is not up.
+     *
+     * A headset that is off, asleep or out of range cannot answer, and opening a channel to it costs
+     * the radio the whole connect timeout rather than the microsecond this check takes. The rider's
+     * music needs the audio link anyway, so a headset that is in use has it and one that does not is
+     * not going to answer. A ride spent with the headset switched off must not page the radio on a
+     * one second cycle for hours.
+     *
+     * A headset can also be on and answering while its audio goes elsewhere, so the guess is given
+     * one real attempt every [GATE_REOPEN_MS]. Without that, a wrong "no" would lock a headset out
+     * for the whole ride with nothing able to correct it.
+     */
+    private suspend fun awaitAudio(device: BluetoothDevice, sinceAttempt: Long): Boolean {
+        if (carryingAudio(device) != false || sinceAttempt >= GATE_REOPEN_MS) return false
+        Timber.d("${device.address} carries no audio; waiting for it to come back")
+        setLink(HeadphonesLink.Searching)
+        _state.update { it.copy(lastError = HeadsetProblem.NotConnected) }
+        // The other paired devices get their turn: one that is on could be among them.
+        candidateIndex++
+        pause(absentProbeMillis.coerceAtLeast(MIN_ABSENT_PROBE_MS))
+        return true
+    }
+
+    /** Runs one session to its end, answering whether the headset connected at all. */
+    private suspend fun connect(device: BluetoothDevice): Boolean =
+        try {
+            runSession(device)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: Exception) {
+            Timber.w("Connection ended: ${failure.message}")
+            _state.update {
+                it.copy(
+                    lastError = HeadsetProblem.Platform(failure.message ?: "the connection failed"),
+                )
+            }
+            false
+        }
 
     /**
      * The paired device to try out of [bonded], or null when none of them could be one.
