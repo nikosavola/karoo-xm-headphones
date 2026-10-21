@@ -13,6 +13,16 @@ val keystoreProperties = Properties().apply {
   rootProject.file("keystore.properties").takeIf { it.isFile }?.inputStream()?.use { load(it) }
 }
 
+// A tag names the release and the libraries read the same variable. Left at a constant, every APK
+// would report the first version, and a Karoo refuses an update whose version code has not climbed.
+val releaseVersion = System.getenv("RELEASE_VERSION")?.removePrefix("v")
+
+/** Major, minor and patch as one climbing number, the shape Android compares. */
+fun versionCodeOf(version: String): Int {
+  val (major, minor, patch) = version.split('.').map { it.toIntOrNull() ?: 0 } + listOf(0, 0, 0)
+  return major * 10_000 + minor * 100 + patch
+}
+
 android {
   namespace = "fi.nikosavola.karoo.xmheadphones"
   compileSdk = 37
@@ -22,8 +32,8 @@ android {
     // The oldest platform the extension is meant to run on; the Karoo in hand reports API 32.
     minSdk = 26
     targetSdk = 37
-    versionCode = 1
-    versionName = "0.1.0"
+    versionCode = releaseVersion?.let(::versionCodeOf) ?: 1
+    versionName = releaseVersion ?: "0.1.0-SNAPSHOT"
   }
 
   signingConfigs {

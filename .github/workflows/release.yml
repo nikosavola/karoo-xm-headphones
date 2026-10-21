@@ -41,6 +41,10 @@ jobs:
           printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
             "$RUNNER_TEMP/release.jks" "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > keystore.properties
       - run: ./gradlew :app:check :app:assembleRelease
+        env:
+          # Makes the APK report the tag rather than a constant, which is also what the version
+          # code has to climb with for a Karoo to accept the update.
+          RELEASE_VERSION: ${{ github.ref_name }}
       - name: Attach the APK to the release
         env:
           GH_TOKEN: ${{ github.token }}
