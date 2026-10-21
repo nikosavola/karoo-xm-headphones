@@ -50,8 +50,8 @@ public fun interface HeadsetTransportFactory {
      * switched on and in reach: a headset the rider is listening to is connected for sound.
      *
      * A device that is not is asleep, off or out of range, and the client skips opening it for a
-     * while rather than paging the radio on the chance that it answers. Answering true when it
-     * cannot tell is deliberate, so a guess never costs a connection that would have worked.
+     * while rather than paging the radio on the chance that it answers. Null is a transport that
+     * cannot tell, which is not the same answer: the connection is attempted.
      */
-    public fun carryingAudio(device: BluetoothDevice): Boolean = true
+    public fun carriesAudio(device: BluetoothDevice): Boolean? = null
 }

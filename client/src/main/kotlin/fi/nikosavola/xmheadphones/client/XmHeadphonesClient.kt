@@ -5,10 +5,10 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
-import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.SystemClock
 import fi.nikosavola.xmheadphones.protocol.DeviceInfoQuestion
 import fi.nikosavola.xmheadphones.protocol.EqualizerPreset
 import fi.nikosavola.xmheadphones.protocol.NoiseCancelling
@@ -23,6 +23,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,6 +52,9 @@ import timber.log.Timber
 public class XmHeadphonesClient private constructor(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val prefs = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+
+    /** Cut a wait short, so a caller that has just asked for something does not wait it out. */
+    private val wake = Channel<Unit>(Channel.CONFLATED)
 
     private val _state = MutableStateFlow(XmHeadphonesState())
     public val state: StateFlow<XmHeadphonesState> = _state.asStateFlow()
@@ -157,6 +161,22 @@ public class XmHeadphonesClient private constructor(private val context: Context
         }
     }
 
+    /**
+     * Asks the loop to try now rather than finish the wait it is in.
+     *
+     * A wait after a failure can be minutes long, and a rider who has just pressed a button is not
+     * waiting that long for the answer. A wake that arrives when nothing is waiting is spent on the
+     * next wait, which costs one attempt nobody asked for and nothing else.
+     */
+    public fun wake() {
+        wake.trySend(Unit)
+    }
+
+    /** A sleep that [wake] can cut short. */
+    private suspend fun pause(millis: Long) {
+        withTimeoutOrNull(millis) { wake.receive() }
+    }
+
     @Synchronized
     private fun shutDown() {
         if (users > 0) return
@@ -203,6 +223,9 @@ public class XmHeadphonesClient private constructor(private val context: Context
     @SuppressLint("MissingPermission") // hasPermissions ran at the top of the loop
     private suspend fun runForever() {
         var failedAttempts = 0
+        // Counted from the start rather than from zero, so a client that has just begun does not
+        // open a channel before its first probe has anything to say.
+        var lastOpenedAt = SystemClock.elapsedRealtime()
         // The address the last attempt was for. A failure belongs to the headset that failed: it
         // stays on screen while that headset is retried, which is what tells a rider why nothing is
         // happening. The moment a different one is tried it goes, or a rider with two paired
@@ -250,16 +273,25 @@ public class XmHeadphonesClient private constructor(private val context: Context
             // takes. The rider's music needs the audio link anyway, so a headset that is in use
             // has it and one that does not is not going to answer. A ride spent with the headset
             // switched off must not page the radio on a one second cycle for hours.
-            if (!carryingAudio(device)) {
+            //
+            // A headset can also be on and answering while its audio goes elsewhere, so the guess
+            // is given one real attempt every GATE_REOPEN_MS. Without that, a wrong "no" would lock
+            // a headset out for the whole ride with nothing able to correct it.
+            val sinceAttempt = SystemClock.elapsedRealtime() - lastOpenedAt
+            if (carryingAudio(device) == false && sinceAttempt < GATE_REOPEN_MS) {
                 Timber.d("${device.address} carries no audio; waiting for it to come back")
                 setLink(HeadphonesLink.Searching)
                 _state.update { it.copy(lastError = HeadsetProblem.NotConnected) }
-                failedAttempts = 0
+                // Only the device that has been failing gives up its backoff. Another device's
+                // failures are not this one's, and clearing them here would keep a second paired
+                // device on a one second retry cycle for as long as the third one stays off.
+                if (lastAttempted == device.address) failedAttempts = 0
                 // The other paired devices get their turn: one that is on could be among them.
                 candidateIndex++
-                delay(absentProbeMillis)
+                pause(absentProbeMillis.coerceAtLeast(MIN_ABSENT_PROBE_MS))
                 continue
             }
+            lastOpenedAt = SystemClock.elapsedRealtime()
             setLink(HeadphonesLink.Connecting)
             val connected =
                 try {
@@ -291,7 +323,7 @@ public class XmHeadphonesClient private constructor(private val context: Context
             // to [MAX_RETRY_DELAY_MS], which is what keeps a walk out of range from costing the
             // radio a connection attempt every second for the rest of the ride.
             failedAttempts++
-            delay(retryDelayMillis(failedAttempts))
+            pause(retryDelayMillis(failedAttempts))
         }
     }
 
@@ -339,19 +371,19 @@ public class XmHeadphonesClient private constructor(private val context: Context
             .getOrDefault(false)
 
     /**
-     * Whether the audio link to [device] is up, which is the cheapest sign that it would answer.
+     * Whether the audio link to [device] is up, or null when nothing here can say.
      *
      * A transport that throws is a broken one rather than a headset that is not there, so the
-     * answer that keeps the loop honest is to try the connection rather than to skip it.
+     * answer that keeps the loop honest is that nobody knows.
      */
-    private fun carryingAudio(device: BluetoothDevice): Boolean =
-        runCatching { transport.carryingAudio(device) }
+    private fun carryingAudio(device: BluetoothDevice): Boolean? =
+        runCatching { transport.carriesAudio(device) }
             .onFailure {
                 Timber.w(
                     "The transport could not tell whether ${device.address} carries audio: ${it.message}",
                 )
             }
-            .getOrDefault(true)
+            .getOrNull()
 
     /**
      * Why a paired device could not be opened.
@@ -359,22 +391,16 @@ public class XmHeadphonesClient private constructor(private val context: Context
      * The exception is the same whether the headset is asleep or is not a Sony one, so it cannot say
      * which. What can is whether the device already carries audio on this phone: a headset that is
      * on and in reach is connected for sound, so a channel that will not open means it does not run
-     * Sony's protocol rather than that it is switched off.
+     * Sony's protocol rather than that it is switched off. A device nobody can tell about gets the
+     * gentler of the two, since telling a rider to switch a headset on costs them a moment while
+     * telling them it is the wrong make sends them looking for another one.
+     *
+     * Asked through the transport, which is the only thing that knows how to ask on a given
+     * platform. Asked of the platform directly, this answered "not connected" for every device on
+     * the Karoo, which refuses the per-device profile query.
      */
-    @SuppressLint("MissingPermission") // hasPermissions ran at the top of the loop
-    private fun unopened(device: BluetoothDevice): HeadsetProblem {
-        val carryingAudio =
-            runCatching {
-                val manager =
-                    context.getSystemService(BluetoothManager::class.java) ?: return@runCatching false
-                manager.getConnectionState(device, BluetoothProfile.A2DP) ==
-                    BluetoothProfile.STATE_CONNECTED ||
-                    manager.getConnectionState(device, BluetoothProfile.HEADSET) ==
-                        BluetoothProfile.STATE_CONNECTED
-            }
-                .getOrDefault(false)
-        return if (carryingAudio) HeadsetProblem.NotSony else HeadsetProblem.NotConnected
-    }
+    private fun unopened(device: BluetoothDevice): HeadsetProblem =
+        if (carryingAudio(device) == true) HeadsetProblem.NotSony else HeadsetProblem.NotConnected
 
     /** False when the headset never answered, which is what moves the search on to the next one. */
     private suspend fun runSession(device: BluetoothDevice): Boolean {
@@ -520,6 +546,18 @@ public class XmHeadphonesClient private constructor(private val context: Context
 
         /** The default for [absentProbeMillis]. */
         public const val DEFAULT_ABSENT_PROBE_MS: Long = 15_000L
+
+        /** A probe interval below this would be a loop, so a caller asking for one gets this. */
+        private const val MIN_ABSENT_PROBE_MS = 1_000L
+
+        /**
+         * How long a headset that carries no audio is left alone before one real attempt.
+         *
+         * Sony's control channel does not need the audio link, so a headset can be on and answering
+         * with its sound going to a phone. The check is a guess and this is what stops a wrong one
+         * from locking the headset out for the ride.
+         */
+        private const val GATE_REOPEN_MS = 300_000L
 
         private const val RETRY_DELAY_MS = 1_000L
 

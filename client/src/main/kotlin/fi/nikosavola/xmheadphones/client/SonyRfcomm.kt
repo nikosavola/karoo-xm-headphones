@@ -92,8 +92,8 @@ public object RfcommTransport : HeadsetTransportFactory {
     }
 
     @SuppressLint("MissingPermission") // the client checks the permission before asking
-    override fun carryingAudio(device: BluetoothDevice): Boolean {
-        val manager = profiles ?: return true
+    override fun carriesAudio(device: BluetoothDevice): Boolean? {
+        val manager = profiles ?: return null
         // Asked one profile at a time: a platform without a profile throws for it, and the Karoo in
         // hand runs no headset profile at all. One that will not answer is left out rather than
         // taking the rest of the question with it.
@@ -111,8 +111,8 @@ public object RfcommTransport : HeadsetTransportFactory {
             AUDIO_PROFILES.mapNotNull { profile ->
                 runCatching { manager.adapter?.getProfileConnectionState(profile) }.getOrNull()
             }
-        // Nothing to go on is not the same as knowing the answer, so the attempt is made.
-        if (profileStates.isEmpty()) return true
+        // Nothing to go on is not the same as knowing the answer.
+        if (profileStates.isEmpty()) return null
         return profileStates.any { it == BluetoothProfile.STATE_CONNECTED }
     }
 
