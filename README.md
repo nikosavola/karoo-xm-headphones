@@ -1,11 +1,23 @@
 # XM Headphones
 
+[![CI](https://github.com/nikosavola/karoo-xm-headphones/actions/workflows/ci.yml/badge.svg)](https://github.com/nikosavola/karoo-xm-headphones/actions/workflows/ci.yml)
+
 A [Hammerhead Karoo](https://www.hammerhead.io/) extension for Sony headphones. It talks to the
 headset with Sony's own protocol and puts the controls from the Sound Connect app onto the Karoo.
 
 It works against a real headset: a WF-1000XM5 on a Karoo, over the headset's classic Bluetooth
 channel. What has and has not been checked is
 [below](#what-has-and-has-not-been-checked-against-real-hardware).
+
+## Installing
+
+The APK is attached to every [release](https://github.com/nikosavola/karoo-xm-headphones/releases).
+On a Karoo 3, open the release page on your phone, long-press the APK link and share it with the
+Hammerhead Companion app. On a Karoo 2, download it and install it with `adb install`. Then pair the
+headset in Karoo's Bluetooth settings, which is also where its audio goes.
+
+It is not in Hammerhead's extension library yet.
+
 
 ## What it does
 
@@ -203,6 +215,14 @@ licensed:
 Testing uses [nikosavola/karoo-ext-testing](https://github.com/nikosavola/karoo-ext-testing), which
 supplies the fake Karoo system and the harness the extension is driven through.
 
+## Privacy
+
+The extension talks to the headset and to nothing else. It declares no network permission, and
+nothing it reads leaves the device.
+
 ## Licence
 
 Apache-2.0.
+
+Not affiliated with, endorsed by, or sponsored by Sony. Sony, WH-1000X and WF-1000X are trademarks
+of Sony Group Corporation, and Karoo is a trademark of Hammerhead.

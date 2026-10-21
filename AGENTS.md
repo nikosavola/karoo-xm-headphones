@@ -46,6 +46,32 @@ up only when publishing.
 `protocol` and `client` set their own `group` and `version`. Without them the publication lands under
 the root project's name at version `unspecified`, which no consumer can resolve.
 
+## Releasing
+
+A tag builds the APK and attaches it to a GitHub release, and publishes the libraries. The APK has to
+be signed with the same key as every release before it, or a Karoo refuses to install it over the old
+one, so the key lives in the repository's Actions secrets (`RELEASE_KEYSTORE_BASE64`,
+`RELEASE_STORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`) and nowhere else. A local
+release build reads `keystore.properties` with the same four values instead:
+
+```properties
+storeFile=/absolute/path/to/release.jks
+storePassword=...
+keyAlias=...
+keyPassword=...
+```
+
+Without either, `assembleRelease` falls back to the debug key, which is fine for a test build and
+never for a tag. Make a key once with
+
+```sh
+keytool -genkeypair -keystore release.jks -alias xm-headphones \
+  -keyalg RSA -keysize 4096 -validity 10000
+```
+
+Back it up somewhere that is not this repo. Losing it means riders have to uninstall before they can
+update.
+
 ## Testing
 
 Tests run under Robolectric against
