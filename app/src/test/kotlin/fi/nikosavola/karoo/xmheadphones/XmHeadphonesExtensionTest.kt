@@ -226,6 +226,10 @@ class XmHeadphonesExtensionTest {
         karoo.awaitValue {
             true.takeIf { headset.noiseCancelling is NoiseCancelling.Ambient }
         }
+        // The action's own hold is released after the headset answers, which can land after this
+        // test does. The rule fails on a claim still held when the service is destroyed, so wait
+        // for the balance rather than for the mode alone.
+        karoo.awaitValue { true.takeIf { karoo.system.radiosBalanced() } }
     }
 
     @Test
@@ -283,6 +287,8 @@ class XmHeadphonesExtensionTest {
         karoo.awaitValue {
             true.takeIf { headset.noiseCancelling is NoiseCancelling.Cancelling }
         }
+        // As above: the broadcast's hold outlives the mode change by a moment.
+        karoo.awaitValue { true.takeIf { karoo.system.radiosBalanced() } }
     }
 
     @Test
