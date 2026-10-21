@@ -12,18 +12,18 @@ permissions:
 
 jobs:
   apk:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: false
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
       - uses: android-actions/setup-android@v4
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       # A release signed with anything else cannot replace the previous one on a Karoo, so a tag
       # with no key configured is an error rather than a debug-signed build that looks fine.
       - name: Put the signing key in place
