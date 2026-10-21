@@ -82,8 +82,10 @@ public object RfcommTransport : HeadsetTransportFactory {
      * The profile states are asked of a context, which a platform singleton has to be handed.
      *
      * Unattached, this answers null, so the client still tries the connection it would otherwise
-     * skip. Only the client that owns the default uses it, and one that supplies its own transport
-     * never comes near this.
+     * skip. Attaching is process-wide, since this is a singleton and the state it asks about is the
+     * platform's rather than one client's. A second holder of the published client attaching its own
+     * context therefore changes the answer every holder gets, which is why only the client's own
+     * construction does it.
      */
     private var profiles: BluetoothManager? = null
 
