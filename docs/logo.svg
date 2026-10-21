@@ -1,17 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 512">
   <!-- The app's mark beside its name, for the README and anywhere a wordmark fits.
-       Same amber and near-black as the launcher icon, so the two read as one thing. -->
-  <rect width="1024" height="512" fill="#141210"/>
+       No background: the letters take their colour from the viewer's theme, so the same file reads
+       on GitHub's light and dark pages. The amber on the icon is the launcher's own colour. -->
+  <style>
+    .wordmark { fill: #241C00; }
+    .tagline { fill: #6B6355; }
+    @media (prefers-color-scheme: dark) {
+      .wordmark { fill: #FFC61A; }
+      .tagline { fill: #A29A8C; }
+    }
+  </style>
   <g id="icon">
     <rect x="56" y="136" width="240" height="240" rx="56" fill="#FFC61A"/>
-    <g transform="translate(84 164) scale(8.5)">
+    <g transform="translate(74 154) scale(8.5)">
       <path fill="#241C00" d="M12,2C7.03,2 3,6.03 3,11v6a3,3 0 0 0,3 3h2v-8H5v-1a7,7 0 0 1,14 0v1h-3v8h2a3,3 0 0 0,3 -3v-6c0,-4.97 -4.03,-9 -9,-9z"/>
     </g>
   </g>
-  <g id="wordmark" font-family="Helvetica, Arial, sans-serif" fill="#FFC61A">
+  <g id="wordmark" class="wordmark" font-family="Helvetica, Arial, sans-serif">
     <text x="344" y="248" font-size="76" font-weight="700">XM Headphones</text>
   </g>
-  <g id="tagline" font-family="Helvetica, Arial, sans-serif" fill="#A29A8C">
+  <g id="tagline" class="tagline" font-family="Helvetica, Arial, sans-serif">
     <text x="346" y="306" font-size="24" font-weight="400">Sony® headset control for the Hammerhead Karoo</text>
   </g>
 </svg>

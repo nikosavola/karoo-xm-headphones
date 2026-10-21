@@ -7,7 +7,7 @@
   </g>
   <g id="icon">
     <rect x="96" y="188" width="264" height="264" rx="62" fill="#FFC61A"/>
-    <g transform="translate(127 219) scale(9.35)">
+    <g transform="translate(116 208) scale(9.35)">
       <path fill="#241C00" d="M12,2C7.03,2 3,6.03 3,11v6a3,3 0 0 0,3 3h2v-8H5v-1a7,7 0 0 1,14 0v1h-3v8h2a3,3 0 0 0,3 -3v-6c0,-4.97 -4.03,-9 -9,-9z"/>
     </g>
   </g>
