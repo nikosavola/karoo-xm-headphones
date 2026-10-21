@@ -52,7 +52,9 @@ the root project's name at version `unspecified`, which no consumer can resolve.
 
 ## Releasing
 
-A tag builds the APK and attaches it to a GitHub release, and publishes the libraries. The APK has to
+A tag builds the APK and attaches it to a GitHub release, and publishes the libraries. The app's
+`versionName` and `versionCode` come from `RELEASE_VERSION` the same way the libraries' versions do,
+so a tag has to sort above the one before it or a Karoo will not update over it. The APK has to
 be signed with the same key as every release before it, or a Karoo refuses to install it over the old
 one, so the key lives in the repository's Actions secrets (`RELEASE_KEYSTORE_BASE64`,
 `RELEASE_STORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`) and nowhere else. A local
