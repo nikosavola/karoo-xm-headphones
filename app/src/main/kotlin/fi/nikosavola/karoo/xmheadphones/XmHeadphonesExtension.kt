@@ -26,8 +26,8 @@ import timber.log.Timber
  * The extension Karoo binds to for as long as it is installed.
  *
  * The headset link is held only while the active profile shows one of its fields, so a rider
- * with no headphone field reaches no headset. The toggle action's button borrows a link just
- * while it needs one.
+ * with no headphone field reaches no headset and Karoo keeps the Bluetooth radio for whatever
+ * else wants it. The toggle action's button borrows a link just while it needs one.
  */
 class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_NAME) {
     private lateinit var karooSystem: KarooSystemService
@@ -39,6 +39,9 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_N
      * action reads it from a coroutine without either lock, so it has to be visible on its own.
      */
     @Volatile private var holdsClient = false
+
+    /** Whether the radio has been asked for and not yet given back. */
+    private var radioHeld = false
 
     override val types by lazy {
         listOf(
@@ -55,8 +58,9 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_N
         karooSystem = KarooSystemService(this)
         karooSystem.connect { connected ->
             Timber.i("Karoo system connected=$connected")
-            // Ask Karoo to leave the Bluetooth radio on for us.
-            if (connected) karooSystem.dispatch(RequestBluetooth(extension))
+            // The ask goes out with the first hold rather than with the service, so a rider whose
+            // profile shows no headphone field never keeps the radio up for this extension.
+            if (!connected) holdRadio(false)
         }
         karooSystem.addConsumer<ActiveRideProfile> { event -> onActiveProfile(event.profile) }
         scope.launch { alertOnDisconnect() }
@@ -106,6 +110,22 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_N
         if (wanted == holdsClient) return
         if (wanted) client.start() else client.stop()
         holdsClient = wanted
+        holdRadio(wanted)
+    }
+
+    /**
+     * Asks Karoo to keep the Bluetooth radio up, and gives it back when nothing here needs it.
+     *
+     * Paired rather than repeated, so a rider toggling fields or pressing the action does not stack
+     * requests that nothing releases.
+     */
+    @Synchronized
+    private fun holdRadio(wanted: Boolean) {
+        if (wanted == radioHeld) return
+        karooSystem.dispatch(
+            if (wanted) RequestBluetooth(extension) else ReleaseBluetooth(extension),
+        )
+        radioHeld = wanted
     }
 
     /**
@@ -116,7 +136,10 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_N
         if (actionId != ACTION_TOGGLE_NOISE_CANCELLING) return
         scope.launch {
             val borrowed = !holdsClient
-            if (borrowed) client.start()
+            if (borrowed) {
+                client.start()
+                holdRadio(true)
+            }
             try {
                 val link =
                     withTimeoutOrNull(BORROW_TIMEOUT_MS) {
@@ -137,7 +160,11 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_N
                 }
             } finally {
                 // The client lingers after the last hold, so a second press avoids reconnecting.
-                if (borrowed) client.stop()
+                if (borrowed) {
+                    client.stop()
+                    // A profile that holds one keeps the radio with its own request.
+                    if (!holdsClient) holdRadio(false)
+                }
             }
         }
     }
@@ -146,7 +173,7 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_N
         Timber.i("Extension service destroyed")
         scope.cancel()
         releaseClient()
-        karooSystem.dispatch(ReleaseBluetooth(extension))
+        holdRadio(false)
         karooSystem.disconnect()
         super.onDestroy()
     }
