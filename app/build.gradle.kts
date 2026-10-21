@@ -4,6 +4,7 @@ plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.serialization)
   alias(libs.plugins.compose.compiler)
+  alias(libs.plugins.kover)
 }
 
 // A release build has to carry the same key as the one before it, or a Karoo refuses to update over

@@ -39,7 +39,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
       # `check` and not just `test`: the library modules' lint gate is part of it, and a lint
       # failure there has no other way of showing up (the app still builds and the tests still pass).
-      - run: ./gradlew check :app:assembleDebug
+      # The kover tasks depend on their module's test task, so this runs every suite once and
+      # writes the reports Codecov and SonarCloud read. protocol is a plain JVM module, so its
+      # report has no variant suffix; client and app run their Robolectric tests as debug unit tests.
+      - run: ./gradlew check :app:assembleDebug :protocol:koverXmlReport :client:koverXmlReportDebug :app:koverXmlReportDebug
       # The tests draw into app/build/screenshots and never over the tracked copies, so this compares
       # what was just rendered against what is committed. A difference is reported rather than failed
       # on: the committed images were recorded on macOS and this runner's rendering has never been
@@ -58,3 +61,21 @@ jobs:
           if ! diff --recursive --brief docs/screenshots app/build/screenshots; then
             echo "::warning::the committed screenshots differ from the ones just rendered"
           fi
+      # secrets is not allowed in an `if`, so the presence check is a step output. Until the token
+      # is configured the uploads are skipped rather than failing on an empty token.
+      - id: codecov
+        run: echo "present=${{ secrets.CODECOV_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+      # Reporting, not a gate: Codecov's own outages must not fail a build whose tests passed.
+      - name: Upload coverage to Codecov
+        if: steps.codecov.outputs.present == 'true'
+        uses: codecov/codecov-action@e53489f4d376d79066609109e7a95a29eb3740b1 # v7.0.0
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: protocol/build/reports/kover/report.xml,client/build/reports/kover/reportDebug.xml,app/build/reports/kover/reportDebug.xml
+          fail_ci_if_error: false
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() && steps.codecov.outputs.present == 'true' }}
+        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: protocol/build/test-results/test/*.xml,client/build/test-results/testDebugUnitTest/*.xml,app/build/test-results/testDebugUnitTest/*.xml

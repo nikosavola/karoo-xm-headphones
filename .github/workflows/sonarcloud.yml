@@ -1,0 +1,39 @@
+name: SonarCloud
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Shallow clones disable blame-based issue attribution.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v4
+      - uses: actions/cache@v6
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+      # secrets is not allowed in an `if`, so its presence is a step output.
+      - id: token
+        run: echo "present=${{ secrets.SONAR_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+      # The kover tasks run the tests and write the reports build.gradle.kts points Sonar at.
+      - if: steps.token.outputs.present == 'true'
+        run: ./gradlew :app:assembleDebug :protocol:koverXmlReport :client:koverXmlReportDebug :app:koverXmlReportDebug sonar --no-daemon
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

@@ -2,6 +2,7 @@
 // platform types so the same artifact can back an Android client, a Wear OS app or a desktop tool.
 plugins {
   alias(libs.plugins.kotlin.jvm)
+  alias(libs.plugins.kover)
   `maven-publish`
 }
 

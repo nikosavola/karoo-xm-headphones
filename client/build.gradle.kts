@@ -3,6 +3,7 @@
 // without reimplementing the session.
 plugins {
   alias(libs.plugins.android.library)
+  alias(libs.plugins.kover)
   `maven-publish`
 }
 
