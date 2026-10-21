@@ -20,10 +20,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: false
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           # Matching the pin in gradle/gradle-daemon-jvm.properties leaves the toolchain resolver
@@ -35,8 +35,8 @@ jobs:
       #
       # Nothing else is named on purpose. Gradle downloads the platform and build tools the modules
       # ask for, and the runner image has their licences accepted already.
-      - uses: android-actions/setup-android@v4
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
       # `check` and not just `test`: the library modules' lint gate is part of it, and a lint
       # failure there has no other way of showing up (the app still builds and the tests still pass).
       # The kover tasks depend on their module's test task, so this runs every suite once and
@@ -73,9 +73,13 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: protocol/build/reports/kover/report.xml,client/build/reports/kover/reportDebug.xml,app/build/reports/kover/reportDebug.xml
           fail_ci_if_error: false
+      # The dedicated test-results action still targets Node 20, so this goes through the same
+      # action with a different report type.
       - name: Upload test results to Codecov
         if: ${{ !cancelled() && steps.codecov.outputs.present == 'true' }}
-        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
+        uses: codecov/codecov-action@e53489f4d376d79066609109e7a95a29eb3740b1 # v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: protocol/build/test-results/test/*.xml,client/build/test-results/testDebugUnitTest/*.xml,app/build/test-results/testDebugUnitTest/*.xml
+          report_type: test_results
+          fail_ci_if_error: false
