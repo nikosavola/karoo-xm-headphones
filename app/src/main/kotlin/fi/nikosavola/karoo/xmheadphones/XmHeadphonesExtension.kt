@@ -40,8 +40,13 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_N
      */
     @Volatile private var holdsClient = false
 
-    /** Whether the radio has been asked for and not yet given back. */
-    private var radioHeld = false
+    /**
+     * How many things here are holding the radio: the profile, and one per press borrowing it.
+     *
+     * Counted rather than a flag, because two presses can overlap and the first one finishing must
+     * not give the radio back while the second is still waiting on the link it asked for.
+     */
+    private var radioClaims = 0
 
     override val types by lazy {
         listOf(
@@ -60,7 +65,15 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_N
             Timber.i("Karoo system connected=$connected")
             // The ask goes out with the first hold rather than with the service, so a rider whose
             // profile shows no headphone field never keeps the radio up for this extension.
-            if (!connected) holdRadio(false)
+            //
+            // A system that went away took the claim with it, and comes back with nothing held. The
+            // profile event that follows does not ask again, since it is the same profile as before,
+            // so the claim is taken here or the link the client is running loses its radio.
+            if (connected) {
+                if (holdsClient) claimRadio()
+            } else {
+                forgetRadio()
+            }
         }
         karooSystem.addConsumer<ActiveRideProfile> { event -> onActiveProfile(event.profile) }
         scope.launch { alertOnDisconnect() }
@@ -108,24 +121,38 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_N
     @Synchronized
     private fun setHoldingClient(wanted: Boolean) {
         if (wanted == holdsClient) return
-        if (wanted) client.start() else client.stop()
+        if (wanted) {
+            client.start()
+            claimRadio()
+        } else {
+            client.stop()
+            dropRadio()
+        }
         holdsClient = wanted
-        holdRadio(wanted)
     }
 
     /**
-     * Asks Karoo to keep the Bluetooth radio up, and gives it back when nothing here needs it.
+     * Asks Karoo to keep the Bluetooth radio up, the first time anything here needs it.
      *
-     * Paired rather than repeated, so a rider toggling fields or pressing the action does not stack
-     * requests that nothing releases.
+     * Counted, so the profile and a press can hold it at the same time and the first to finish does
+     * not take it from the other. Only the change between none and some is dispatched, so a rider
+     * toggling fields or pressing the action does not stack asks that nothing gives back.
      */
     @Synchronized
-    private fun holdRadio(wanted: Boolean) {
-        if (wanted == radioHeld) return
-        karooSystem.dispatch(
-            if (wanted) RequestBluetooth(extension) else ReleaseBluetooth(extension),
-        )
-        radioHeld = wanted
+    private fun claimRadio() {
+        if (radioClaims++ == 0) karooSystem.dispatch(RequestBluetooth(extension))
+    }
+
+    @Synchronized
+    private fun dropRadio() {
+        if (radioClaims == 0) return
+        if (--radioClaims == 0) karooSystem.dispatch(ReleaseBluetooth(extension))
+    }
+
+    /** The system took everything that was claimed with it, so nothing is held until it comes back. */
+    @Synchronized
+    private fun forgetRadio() {
+        radioClaims = 0
     }
 
     /**
@@ -138,8 +165,11 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_N
             val borrowed = !holdsClient
             if (borrowed) {
                 client.start()
-                holdRadio(true)
+                claimRadio()
             }
+            // A wait after a failure can be minutes long, and the press is a rider asking for the
+            // change now. The loop is woken instead of sitting the wait out.
+            client.wake()
             try {
                 val link =
                     withTimeoutOrNull(BORROW_TIMEOUT_MS) {
@@ -162,8 +192,7 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_N
                 // The client lingers after the last hold, so a second press avoids reconnecting.
                 if (borrowed) {
                     client.stop()
-                    // A profile that holds one keeps the radio with its own request.
-                    if (!holdsClient) holdRadio(false)
+                    dropRadio()
                 }
             }
         }
@@ -173,14 +202,17 @@ class XmHeadphonesExtension : KarooExtension(EXTENSION_ID, BuildConfig.VERSION_N
         Timber.i("Extension service destroyed")
         scope.cancel()
         releaseClient()
-        holdRadio(false)
+        forgetRadio()
         karooSystem.disconnect()
         super.onDestroy()
     }
 
     @Synchronized
     private fun releaseClient() {
-        if (holdsClient) client.stop()
+        if (holdsClient) {
+            client.stop()
+            dropRadio()
+        }
         holdsClient = false
     }
 
