@@ -17,9 +17,18 @@ val keystoreProperties = Properties().apply {
 // would report the first version, and a Karoo refuses an update whose version code has not climbed.
 val releaseVersion = System.getenv("RELEASE_VERSION")?.removePrefix("v")
 
-/** Major, minor and patch as one climbing number, the shape Android compares. */
+/**
+ * Major, minor and patch as one climbing number, the shape Android compares.
+ *
+ * A trailing `-rc1` and the like is rejected rather than read as zero. Two tags that differ only
+ * after the numbers would then get the same code, and the Karoo would refuse the second one.
+ */
 fun versionCodeOf(version: String): Int {
-  val (major, minor, patch) = version.split('.').map { it.toIntOrNull() ?: 0 } + listOf(0, 0, 0)
+  val (major, minor, patch) =
+    version.split('.').map {
+      it.toIntOrNull()
+        ?: error("RELEASE_VERSION `$version` is not numeric, so no version code can climb with it")
+    } + listOf(0, 0, 0)
   return major * 10_000 + minor * 100 + patch
 }
 
