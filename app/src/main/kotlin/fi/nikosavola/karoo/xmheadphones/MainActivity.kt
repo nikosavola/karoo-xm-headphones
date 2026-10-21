@@ -31,8 +31,8 @@ class MainActivity : ComponentActivity() {
                 val scope = rememberCoroutineScope()
                 ControlScreen(
                     state = state,
-                    setNoiseCancelling = { target ->
-                        scope.launch { client.setNoiseCancelling(target) }
+                    setNoiseCancelling = { target, done ->
+                        scope.launch { done(client.setNoiseCancelling(target)) }
                     },
                     setEqualizerPreset = { preset ->
                         scope.launch { client.setEqualizerPreset(preset) }

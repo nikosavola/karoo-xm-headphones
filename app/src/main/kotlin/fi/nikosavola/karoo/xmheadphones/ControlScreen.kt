@@ -67,7 +67,8 @@ import fi.nikosavola.xmheadphones.protocol.ProtocolVersion
 @Composable
 internal fun ControlScreen(
     state: XmHeadphonesState,
-    setNoiseCancelling: (NoiseCancelling) -> Unit,
+    /** Applies a mode, and reports back whether the headset took it. */
+    setNoiseCancelling: (NoiseCancelling, (Boolean) -> Unit) -> Unit,
     setEqualizerPreset: (EqualizerPreset) -> Unit,
     forget: () -> Unit,
     askForPermissions: () -> Unit,
@@ -393,7 +394,7 @@ private fun Battery(reading: BatteryReading) {
 @Composable
 private fun NoiseControlSection(
     state: XmHeadphonesState,
-    setNoiseCancelling: (NoiseCancelling) -> Unit,
+    setNoiseCancelling: (NoiseCancelling, (Boolean) -> Unit) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         SectionHeading(stringResource(R.string.settings_noise_cancelling))
@@ -432,7 +433,10 @@ private fun NoiseControlSection(
 
         fun apply(next: NoiseCancelling) {
             intended = next
-            setNoiseCancelling(next)
+            // A write the headset never acknowledges leaves the state on the mode it last reported,
+            // and that is the only thing that clears the guess. Without this the screen would keep
+            // showing a mode the headset refused for the rest of the ride.
+            setNoiseCancelling(next) { accepted -> if (!accepted) intended = null }
         }
 
         // The three states are one choice, so they are one control rather than three buttons. The

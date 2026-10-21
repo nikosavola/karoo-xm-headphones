@@ -14,6 +14,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
@@ -116,7 +117,7 @@ class ControlScreenScreenshotTest {
                 noiseCancelling = NoiseCancelling.Ambient(AmbientLevel.clamped(14), focusOnVoice = false),
                 equalizerPreset = EqualizerPreset.Rock,
             ),
-        ) {}
+        )
 
         shows("Headset battery", "Noise cancelling")
 
@@ -140,7 +141,7 @@ class ControlScreenScreenshotTest {
                 noiseCancelling = NoiseCancelling.Ambient(AmbientLevel.clamped(14), focusOnVoice = false),
                 equalizerPreset = EqualizerPreset.Rock,
             ),
-        ) {}
+        )
 
         // Pinned so the test cannot quietly go back to the wider viewport and keep passing.
         assertEquals(256.dp, compose.onNodeWithTag(SCREEN).getUnclippedBoundsInRoot().right)
@@ -259,7 +260,7 @@ class ControlScreenScreenshotTest {
                 link = HeadphonesLink.Searching,
                 lastError = HeadsetProblem.Platform("the headset never reported its protocol version"),
             ),
-        ) {}
+        )
 
         shows("Last error: the headset never reported its protocol version")
     }
@@ -277,7 +278,7 @@ class ControlScreenScreenshotTest {
                 link = HeadphonesLink.Searching,
                 lastError = HeadsetProblem.NotConnected,
             ),
-        ) {}
+        )
 
         shows(
             "No Bluetooth headphones are connected. Switch the headset on and bring it near the Karoo.",
@@ -288,7 +289,7 @@ class ControlScreenScreenshotTest {
     fun `a device that is not a Sony headset is said plainly`() {
         render(
             XmHeadphonesState(link = HeadphonesLink.Searching, lastError = HeadsetProblem.NotSony),
-        ) {}
+        )
 
         shows("That device did not answer Sony® protocol, so it is probably not a Sony® headset.")
     }
@@ -312,7 +313,7 @@ class ControlScreenScreenshotTest {
                             "client sends all live there",
                     ),
             ),
-        ) {}
+        )
 
         val screen = compose.onNodeWithTag(SCREEN).getUnclippedBoundsInRoot()
         listOf(
@@ -390,7 +391,7 @@ class ControlScreenScreenshotTest {
     /** Tapping the name again puts the panel away, rather than leaving the screen taller for good. */
     @Test
     fun `the headset name puts the details away again`() {
-        render(connected(noiseCancelling = NoiseCancelling.Cancelling, equalizerPreset = EqualizerPreset.Rock)) {}
+        render(connected(noiseCancelling = NoiseCancelling.Cancelling, equalizerPreset = EqualizerPreset.Rock))
 
         compose.onNodeWithText("WH-1000XM5 (firmware 2.1.0)").performClick()
         compose.waitForIdle()
@@ -409,7 +410,7 @@ class ControlScreenScreenshotTest {
      */
     @Test
     fun `the name offers no details with no headset on the link`() {
-        render(XmHeadphonesState(link = HeadphonesLink.Searching)) {}
+        render(XmHeadphonesState(link = HeadphonesLink.Searching))
 
         showsTimes("Protocol", times = 0)
         compose.onNodeWithText("Searching…").assertIsNotEnabled()
@@ -433,7 +434,7 @@ class ControlScreenScreenshotTest {
                 address = null,
                 tables = emptySet(),
             ),
-        ) {}
+        )
 
         compose.onNodeWithText("Sony headphones").performClick()
         compose.waitForIdle()
@@ -462,7 +463,7 @@ class ControlScreenScreenshotTest {
                 noiseCancelling = NoiseCancelling.Ambient(AmbientLevel.clamped(10), focusOnVoice = false),
                 equalizerPreset = EqualizerPreset.Rock,
             ),
-        ) { sent += it }
+        ) { next, _ -> sent += next }
         compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress))
             .performSemanticsAction(SemanticsActions.SetProgress) { it(14f) }
         compose.onNode(isToggleable()).performClick()
@@ -497,7 +498,7 @@ class ControlScreenScreenshotTest {
             )
         compose.setContent {
             XmHeadphonesTheme {
-                ControlScreen(state.value, { sent += it }, {}, {}, {})
+                ControlScreen(state.value, { next, _ -> sent += next }, {}, {}, {})
             }
         }
         compose.waitForIdle()
@@ -542,7 +543,7 @@ class ControlScreenScreenshotTest {
         compose.setContent {
             XmHeadphonesTheme {
                 Box(modifier = Modifier.fillMaxSize().testTag(SCREEN)) {
-                    ControlScreen(state.value, {}, {}, {}, {})
+                    ControlScreen(state.value, { _, _ -> }, {}, {}, {})
                 }
             }
         }
@@ -574,6 +575,34 @@ class ControlScreenScreenshotTest {
                 }
             }
 
+    /**
+     * The screen shows the rider's change until the headset reports one, so a write it never
+     * acknowledges has to be taken back. Left in place, the guess would outlive the ride, since
+     * only a report from the headset clears it.
+     */
+    @Test
+    fun `a mode the headset refused is not left on the screen`() {
+        val state =
+            mutableStateOf(
+                connected(noiseCancelling = NoiseCancelling.Cancelling, equalizerPreset = null),
+            )
+        compose.setContent {
+            XmHeadphonesTheme {
+                Box(modifier = Modifier.fillMaxSize().testTag(SCREEN)) {
+                    // The client answers false when the write goes unacknowledged.
+                    ControlScreen(state.value, { _, done -> done(false) }, {}, {}, {})
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Ambient").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("NC").assertIsSelected()
+        compose.onNodeWithText("Ambient").assertIsNotSelected()
+    }
+
     /** Focus on voice is a setting of the rider's, not of the mode they happen to be in. */
     @Test
     fun `focus on voice survives a trip through off and back`() {
@@ -588,7 +617,7 @@ class ControlScreenScreenshotTest {
             )
         compose.setContent {
             XmHeadphonesTheme {
-                ControlScreen(state.value, { sent += it }, {}, {}, {})
+                ControlScreen(state.value, { next, _ -> sent += next }, {}, {}, {})
             }
         }
         compose.waitForIdle()
@@ -730,7 +759,7 @@ class ControlScreenScreenshotTest {
         scrollTo: String? = null,
         shows: () -> Unit,
     ) {
-        render(state) {}
+        render(state)
         scrollTo?.let {
             compose.onNodeWithText(it).performScrollTo()
             compose.waitForIdle()
@@ -749,7 +778,10 @@ class ControlScreenScreenshotTest {
         }
     }
 
-    private fun render(state: XmHeadphonesState, setNoiseCancelling: (NoiseCancelling) -> Unit) {
+    private fun render(
+        state: XmHeadphonesState,
+        setNoiseCancelling: (NoiseCancelling, (Boolean) -> Unit) -> Unit = { _, _ -> },
+    ) {
         compose.setContent {
             XmHeadphonesTheme {
                 Box(modifier = Modifier.fillMaxSize().testTag(SCREEN)) {
