@@ -1,4 +1,4 @@
-# XM Headphones
+<p align="center"><img src="docs/logo.svg" alt="XM Headphones" width="440"></p>
 
 [![CI](https://github.com/nikosavola/karoo-xm-headphones/actions/workflows/ci.yml/badge.svg)](https://github.com/nikosavola/karoo-xm-headphones/actions/workflows/ci.yml)
 

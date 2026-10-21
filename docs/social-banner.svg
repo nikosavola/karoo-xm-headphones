@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640">
+  <!-- GitHub's social preview. The arcs echo the headband and sit clear of the wordmark. -->
+  <rect width="1280" height="640" fill="#141210"/>
+  <g fill="none" stroke="#241C00" stroke-linecap="round">
+    <path d="M1006 700 A150 150 0 0 1 1306 700" stroke-width="40"/>
+    <path d="M1066 720 A90 90 0 0 1 1246 720" stroke-width="28"/>
+  </g>
+  <g id="icon">
+    <rect x="96" y="188" width="264" height="264" rx="62" fill="#FFC61A"/>
+    <g transform="translate(127 219) scale(9.35)">
+      <path fill="#241C00" d="M12,2C7.03,2 3,6.03 3,11v6a3,3 0 0 0,3 3h2v-8H5v-1a7,7 0 0 1,14 0v1h-3v8h2a3,3 0 0 0,3 -3v-6c0,-4.97 -4.03,-9 -9,-9z"/>
+    </g>
+  </g>
+  <g id="wordmark" font-family="Helvetica, Arial, sans-serif" fill="#FFC61A">
+    <text x="420" y="316" font-size="88" font-weight="700">XM Headphones</text>
+  </g>
+  <g id="tagline" font-family="Helvetica, Arial, sans-serif" fill="#A29A8C">
+    <text x="424" y="382" font-size="32" font-weight="400">Noise cancelling, ambient sound and equalizer</text>
+    <text x="424" y="426" font-size="32" font-weight="400">presets, from a Sony® headset on the Karoo</text>
+  </g>
+</svg>
