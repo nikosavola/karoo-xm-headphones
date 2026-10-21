@@ -1,7 +1,16 @@
+import java.util.Properties
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.serialization)
   alias(libs.plugins.compose.compiler)
+}
+
+// A release build has to carry the same key as the one before it, or a Karoo refuses to update over
+// it. The key is never in the repo: a local build reads keystore.properties, and CI writes that same
+// file from its secrets before it builds.
+val keystoreProperties = Properties().apply {
+  rootProject.file("keystore.properties").takeIf { it.isFile }?.inputStream()?.use { load(it) }
 }
 
 android {
@@ -17,10 +26,22 @@ android {
     versionName = "0.1.0"
   }
 
+  signingConfigs {
+    create("release") {
+      if (keystoreProperties.isNotEmpty()) {
+        storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+        storePassword = keystoreProperties.getProperty("storePassword")
+        keyAlias = keystoreProperties.getProperty("keyAlias")
+        keyPassword = keystoreProperties.getProperty("keyPassword")
+      }
+    }
+  }
+
   buildTypes {
     release {
       isMinifyEnabled = false
-      signingConfig = signingConfigs.getByName("debug")
+      // Without a key the build still works, which is what the tests and the screenshot task need.
+      signingConfig = signingConfigs.getByName(if (keystoreProperties.isNotEmpty()) "release" else "debug")
     }
   }
 
