@@ -38,6 +38,9 @@ public object RfcommTransport : HeadsetTransportFactory {
     /** Tried in order, newest first, since only one of them is there. */
     public val SERVICES: List<UUID> = listOf(SERVICE_V2, SERVICE_V1)
 
+    /** The profiles a classic headset carries its sound on, either of which means it is in use. */
+    private val AUDIO_PROFILES = listOf(BluetoothProfile.A2DP, BluetoothProfile.HEADSET)
+
     /**
      * What one service gets before the next is tried. A headset that is on answers in well under a
      * second; this is for the one that is not, and a caller waiting on a link has to allow for
@@ -61,7 +64,7 @@ public object RfcommTransport : HeadsetTransportFactory {
                     continue
                 }
             try {
-                connect(socket, device)
+                connectWithTimeout(socket, device.address)
                 return SocketTransport(socket)
             } catch (refused: IOException) {
                 failure = refused
@@ -71,9 +74,6 @@ public object RfcommTransport : HeadsetTransportFactory {
         throw failure ?: IOException("the headset registers no control service")
     }
 
-    private suspend fun connect(socket: BluetoothSocket, device: BluetoothDevice) =
-        connectWithTimeout(socket, device.address)
-
     @SuppressLint("MissingPermission") // the client checks the permission before asking
     override fun looksReachable(device: BluetoothDevice): Boolean =
         runCatching { device.uuids.orEmpty().any { it.uuid in SERVICES } }.getOrDefault(false)
@@ -81,7 +81,7 @@ public object RfcommTransport : HeadsetTransportFactory {
     /**
      * The profile states are asked of a context, which a platform singleton has to be handed.
      *
-     * Unattached, this answers true, so the client still tries the connection it would otherwise
+     * Unattached, this answers null, so the client still tries the connection it would otherwise
      * skip. Only the client that owns the default uses it, and one that supplies its own transport
      * never comes near this.
      */
@@ -115,8 +115,6 @@ public object RfcommTransport : HeadsetTransportFactory {
         if (profileStates.isEmpty()) return null
         return profileStates.any { it == BluetoothProfile.STATE_CONNECTED }
     }
-
-    private val AUDIO_PROFILES = listOf(BluetoothProfile.A2DP, BluetoothProfile.HEADSET)
 
     /** An open socket, as the pipe the session reads and writes. */
     private class SocketTransport(private val socket: BluetoothSocket) : HeadsetTransport {

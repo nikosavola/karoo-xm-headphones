@@ -274,7 +274,7 @@ internal class SonySession(private val transport: HeadsetTransport) : AutoClosea
                     }
                     is SonyResponse.Unrecognised -> Timber.d("Ignoring command ${response.command}")
                     else -> {
-                        rememberNoiseControl(response)
+                        if (response is SonyResponse.NoiseControl) rememberNoiseControl(response)
                         val command = frame.payload.firstOrNull() ?: 0
                         waiters
                             .firstOrNull {
@@ -300,8 +300,7 @@ internal class SonySession(private val transport: HeadsetTransport) : AutoClosea
      * button or from another app, and sending back the adaptive fields from before that would undo
      * what they set.
      */
-    private fun rememberNoiseControl(response: SonyResponse) {
-        val noiseControl = response as? SonyResponse.NoiseControl ?: return
+    private fun rememberNoiseControl(noiseControl: SonyResponse.NoiseControl) {
         val ambient = noiseControl.state as? NoiseCancelling.Ambient
         if (ambient != null) ambientLevel = ambient.level
         noiseControl.adaptive?.let { adaptive = it }

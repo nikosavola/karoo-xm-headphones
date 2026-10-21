@@ -2,7 +2,6 @@ package fi.nikosavola.xmheadphones.client
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.content.Context
@@ -15,7 +14,6 @@ import fi.nikosavola.xmheadphones.protocol.NoiseCancelling
 import fi.nikosavola.xmheadphones.protocol.SonyDeviceInfo
 import fi.nikosavola.xmheadphones.protocol.SonyRequest
 import fi.nikosavola.xmheadphones.protocol.SonyResponse
-import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -364,11 +362,9 @@ public class XmHeadphonesClient private constructor(private val context: Context
      * the loop to it would leave the link saying whatever it last said, with nothing looking again.
      */
     private fun reachable(factory: HeadsetTransportFactory, device: BluetoothDevice): Boolean =
-        runCatching { factory.looksReachable(device) }
-            .onFailure {
-                Timber.w("The transport could not tell whether ${device.address} is reachable: ${it.message}")
-            }
-            .getOrDefault(false)
+        transportAnswer("whether ${device.address} is reachable") {
+            factory.looksReachable(device)
+        } ?: false
 
     /**
      * Whether the audio link to [device] is up, or null when nothing here can say.
@@ -377,12 +373,18 @@ public class XmHeadphonesClient private constructor(private val context: Context
      * answer that keeps the loop honest is that nobody knows.
      */
     private fun carryingAudio(device: BluetoothDevice): Boolean? =
-        runCatching { transport.carriesAudio(device) }
-            .onFailure {
-                Timber.w(
-                    "The transport could not tell whether ${device.address} carries audio: ${it.message}",
-                )
-            }
+        transportAnswer("whether ${device.address} carries audio") { transport.carriesAudio(device) }
+
+    /**
+     * Asks the transport [question], or null when it fails to answer.
+     *
+     * A transport that throws is a broken one rather than a headset that is not there, and this is
+     * where a caller's own transport meets a loop that has to keep running whatever it does. Losing
+     * the loop to it would leave the link saying whatever it last said, with nothing looking again.
+     */
+    private inline fun <T> transportAnswer(question: String, ask: () -> T): T? =
+        runCatching(ask)
+            .onFailure { Timber.w("The transport could not tell $question: ${it.message}") }
             .getOrNull()
 
     /**

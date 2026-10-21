@@ -376,10 +376,8 @@ internal class FakeHeadset(
         link?.push(MdrFrame(MdrDataType.Ack, sequence, ByteArray(0)))
     }
 
-    private fun hexBytes(text: String): ByteArray =
+    private fun hex(text: String): ByteArray =
         ByteArray(text.length / 2) { text.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
-
-    private fun hex(text: String): ByteArray = hexBytes(text)
 
     internal companion object {
         const val CONNECT_GET_PROTOCOL_INFO = 0x00
