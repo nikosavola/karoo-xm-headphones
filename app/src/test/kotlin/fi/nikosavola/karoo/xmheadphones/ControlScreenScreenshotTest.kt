@@ -16,13 +16,16 @@ import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -100,6 +103,26 @@ class ControlScreenScreenshotTest {
             chipsFitOnOneLine("Rock", "Pop", "Jazz")
             compose.onNodeWithText("Ambient").assertIsSelected()
         }
+    }
+
+    /**
+     * What a screen reader hears on the two controls whose meaning is in the text beside them.
+     *
+     * The switch is the whole row, so its label belongs to the same node; a bare switch reads as
+     * "on" with no clue what it turns on. The slider names itself, since the number it reports is a
+     * value rather than a name.
+     */
+    @Test
+    fun `the ambient controls say what they are`() {
+        render(
+            connected(
+                noiseCancelling = NoiseCancelling.Ambient(AmbientLevel.clamped(14), focusOnVoice = true),
+                equalizerPreset = EqualizerPreset.Rock,
+            ),
+        )
+
+        compose.onNodeWithContentDescription("Ambient Level").assertIsDisplayed()
+        compose.onNode(isToggleable() and hasText("Focus on voice")).assertIsOn()
     }
 
     /**
