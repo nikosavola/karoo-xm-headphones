@@ -5,7 +5,7 @@
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=nikosavola_karoo-xm-headphones&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=nikosavola_karoo-xm-headphones)
 [![License](https://img.shields.io/github/license/nikosavola/karoo-xm-headphones)](LICENSE)
 
-A [Hammerhead Karoo](https://www.hammerhead.io/) extension for Sony® headphones. It talks to the headset with Sony's own protocol and puts the controls from the Sound Connect app on the Karoo. It has been used with a WF-1000XM5 on a Karoo 2.
+A [Hammerhead Karoo](https://www.hammerhead.io/) extension for Sony® headphones. It talks to the headset with Sony's own protocol and puts the controls from the Sound Connect app on the Karoo.
 
 <p align="center">
   <a href="https://github.com/nikosavola/karoo-xm-headphones/releases/latest/download/app-release.apk">
