@@ -39,7 +39,23 @@ dependencies {
 afterEvaluate {
   publishing {
     publications {
-      create<MavenPublication>("release") { from(components["release"]) }
+      create<MavenPublication>("release") {
+        from(components["release"])
+        pom {
+          name = "Sony headset client"
+          description =
+            "Android client for Sony MDR headphones: the classic Bluetooth transport, the session " +
+              "over it, and a state flow of what the headset reports."
+          url = "https://github.com/nikosavola/karoo-xm-headphones"
+          licenses {
+            license {
+              name = "Apache License 2.0"
+              url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
+            }
+          }
+          scm { url = "https://github.com/nikosavola/karoo-xm-headphones" }
+        }
+      }
     }
   }
 }

@@ -45,12 +45,29 @@ The images are drawn from the real screen and field code, with values a headset 
 
 ## Using the client
 
+Every `v*` tag publishes both modules from CI, to GitHub Packages and to JitPack. JitPack builds the tag on its first request, so it needs no token.
+
 ```kotlin
+repositories {
+    maven {
+        url = uri("https://maven.pkg.github.com/nikosavola/karoo-xm-headphones")
+        credentials {
+            // A classic PAT with read:packages. GitHub Packages rejects anonymous reads even of a
+            // public package, and does not accept fine-grained tokens.
+            username = System.getenv("GITHUB_ACTOR")
+            password = System.getenv("GITHUB_TOKEN")
+        }
+    }
+    maven("https://jitpack.io")  // no token
+}
+
 dependencies {
-    // JitPack builds the tags, so this needs no token.
-    implementation("com.github.nikosavola.karoo-xm-headphones:client:<tag>")
-    // Or GitHub Packages, which does:
-    implementation("fi.nikosavola.xmheadphones:client:<version>")
+    // Either registry works; use one per module, not both.
+    implementation("fi.nikosavola.xmheadphones:client:<version>")  // GitHub Packages
+    // implementation("com.github.nikosavola.karoo-xm-headphones:client:<tag>")  // JitPack
+
+    // Just the frame codec, for a JVM tool or something that brings its own transport.
+    implementation("fi.nikosavola.xmheadphones:protocol:<version>")
 }
 ```
 

@@ -23,7 +23,23 @@ dependencies {
 
 publishing {
   publications {
-    create<MavenPublication>("maven") { from(components["java"]) }
+    create<MavenPublication>("maven") {
+      from(components["java"])
+      pom {
+        name = "Sony headset protocol"
+        description =
+          "Frame codec and command definitions for the Sony MDR control protocol. No Android or " +
+            "other platform types, so it runs on any JVM target."
+        url = "https://github.com/nikosavola/karoo-xm-headphones"
+        licenses {
+          license {
+            name = "Apache License 2.0"
+            url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
+          }
+        }
+        scm { url = "https://github.com/nikosavola/karoo-xm-headphones" }
+      }
+    }
   }
   repositories {
     maven {
