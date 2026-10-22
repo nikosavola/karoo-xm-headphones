@@ -14,6 +14,7 @@ androidxActivity = "1.13.0"
 androidxComposeUi = "1.12.1"
 androidxComposeMaterial = "1.4.0"
 androidxLifecycle = "2.11.0"
+androidxWork = "2.12.0"
 glance = "1.2.0"
 
 junit = "4.13.2"
@@ -52,6 +53,8 @@ androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling
 androidx-compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4", version.ref = "androidxComposeUi" }
 androidx-compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest", version.ref = "androidxComposeUi" }
 androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidxLifecycle" }
+androidx-work-runtime = { module = "androidx.work:work-runtime", version.ref = "androidxWork" }
+androidx-work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "androidxWork" }
 androidx-glance-appwidget = { module = "androidx.glance:glance-appwidget", version.ref = "glance" }
 
 junit = { module = "junit:junit", version.ref = "junit" }
