@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The one thing this app keeps is the address of the headset the rider chose, in the client's
+  preferences. Restoring it saves pairing a different headset by mistake after a reinstall; the
+  client falls back to searching when the address is not paired on the new device.
+
+  Only that file: nothing else here is worth carrying across devices, and an include list keeps
+  anything a later version stores out until it is named here on purpose.
+-->
+<full-backup-content>
+    <include
+        domain="sharedpref"
+        path="sony-headphones.xml" />
+</full-backup-content>

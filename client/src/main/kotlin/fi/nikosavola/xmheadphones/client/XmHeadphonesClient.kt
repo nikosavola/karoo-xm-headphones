@@ -50,7 +50,12 @@ import timber.log.Timber
  */
 public class XmHeadphonesClient private constructor(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val prefs = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+
+    // Lazy because creating it touches the disk, and the client is built from the main thread when
+    // a screen first asks for it. The first read is the saved address, on the connect loop's thread.
+    private val prefs by lazy {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+    }
 
     /** Cut a wait short, so a caller that has just asked for something does not wait it out. */
     private val wake = Channel<Unit>(Channel.CONFLATED)

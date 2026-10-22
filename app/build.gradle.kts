@@ -76,6 +76,14 @@ android {
 }
 
 dependencies {
+  // karoo-ext still asks for WorkManager 2.7.1, which brings Room 2.2.5 from 2020 and a consumer
+  // rule that no longer matches what Room instantiates reflectively. The WorkManager API it uses
+  // has not changed since, and this is what keeps the release build's R8 rules honest.
+  constraints {
+    implementation(libs.androidx.work.runtime)
+    implementation(libs.androidx.work.runtime.ktx)
+  }
+
   implementation(project(":protocol"))
   implementation(project(":client"))
 

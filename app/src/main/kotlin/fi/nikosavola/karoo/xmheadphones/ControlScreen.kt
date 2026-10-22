@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -36,12 +38,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import fi.nikosavola.xmheadphones.client.HeadphonesLink
 import fi.nikosavola.xmheadphones.client.HeadsetProblem
@@ -75,26 +80,33 @@ internal fun ControlScreen(
     modifier: Modifier = Modifier,
 ) {
     Surface(modifier = modifier.fillMaxSize()) {
-        Column(
-            modifier =
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                stringResource(R.string.settings_title),
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Connection(state, onAskForPermissions = askForPermissions)
+        // Capped so the text lines stay readable if this ever runs on something wider than the
+        // Karoo, which is 256dp and never reaches the cap.
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            Column(
+                modifier =
+                    Modifier.widthIn(max = MAX_CONTENT_WIDTH)
+                        .fillMaxHeight()
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    stringResource(R.string.settings_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Connection(state, onAskForPermissions = askForPermissions)
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-            NoiseControlSection(state, setNoiseCancelling)
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                NoiseControlSection(state, setNoiseCancelling)
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-            EqualizerSection(state, setEqualizerPreset)
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                EqualizerSection(state, setEqualizerPreset)
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-            Forgetting(forget)
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                Forgetting(forget)
+            }
         }
     }
 }
@@ -112,7 +124,7 @@ private fun SectionHeading(text: String, modifier: Modifier = Modifier) {
 
 @Composable
 private fun Connection(state: XmHeadphonesState, onAskForPermissions: () -> Unit) {
-    var detailsAsked by remember { mutableStateOf(false) }
+    var detailsAsked by rememberSaveable { mutableStateOf(false) }
     // Hung off the link rather than folded into it, so a headset that drops puts the panel away by
     // itself. Closing it on the way out of composition would be a write during composition, and the
     // panel would still be open the moment the headset came back.
@@ -428,8 +440,10 @@ private fun NoiseControlSection(
         val ambient = shown as? NoiseCancelling.Ambient
         val base = if (intended == null) state else state.copy(noiseCancelling = shown)
 
-        // Send the dragged level only on release. One write per drag, not one per pixel.
-        var dragging by remember { mutableStateOf<Int?>(null) }
+        // Send the dragged level only on release. One write per drag, not one per pixel. Saved, so
+        // a rotation mid-drag does not send the level the headset reported instead of the one the
+        // rider is on.
+        var dragging by rememberSaveable { mutableStateOf<Int?>(null) }
 
         fun apply(next: NoiseCancelling) {
             intended = next
@@ -470,11 +484,16 @@ private fun NoiseControlSection(
 
         if (ambient != null) {
             val level = dragging ?: ambient.level.steps
+            val ambientLevelLabel = stringResource(R.string.ambient_level)
             Text(
                 stringResource(R.string.settings_ambient_level, level),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Slider(
+                modifier =
+                    Modifier.semantics {
+                        contentDescription = ambientLevelLabel
+                    },
                 enabled = live,
                 value = level.toFloat(),
                 onValueChange = { dragging = it.toInt() },
@@ -487,7 +506,21 @@ private fun NoiseControlSection(
                 valueRange = AmbientLevel.MIN_STEPS.toFloat()..AmbientLevel.MAX_STEPS.toFloat(),
                 steps = AmbientLevel.MAX_STEPS - AmbientLevel.MIN_STEPS - 1,
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // The whole row toggles, so a screen reader reads the label with the switch rather than
+            // announcing an unlabelled on/off control beside it.
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .toggleable(
+                            value = ambient.focusOnVoice,
+                            enabled = live,
+                            role = Role.Switch,
+                            onValueChange = { voice ->
+                                apply(NoiseCancelling.Ambient(base.ambientLevel(), voice))
+                            },
+                        ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
                     stringResource(R.string.settings_focus_on_voice),
                     modifier = Modifier.weight(1f),
@@ -495,9 +528,7 @@ private fun NoiseControlSection(
                 Switch(
                     enabled = live,
                     checked = ambient.focusOnVoice,
-                    onCheckedChange = { voice ->
-                        apply(NoiseCancelling.Ambient(base.ambientLevel(), voice))
-                    },
+                    onCheckedChange = null,
                 )
             }
         }
@@ -539,7 +570,7 @@ private fun EqualizerSection(
 
 @Composable
 private fun Forgetting(forget: () -> Unit) {
-    var forgotten by remember { mutableStateOf(false) }
+    var forgotten by rememberSaveable { mutableStateOf(false) }
     Text(
         if (forgotten) {
             stringResource(R.string.settings_forgotten)
@@ -607,6 +638,9 @@ private fun XmHeadphonesState.notReadyText(supported: Boolean, unsupported: Stri
 
 /** How many segments the noise control row is split into. */
 private const val MODE_COUNT = 3
+
+/** Where the text stops stretching, for a screen wider than the Karoo the screen is built for. */
+private val MAX_CONTENT_WIDTH = 480.dp
 
 /**
  * The presets worth a chip.
