@@ -7,6 +7,12 @@
 
 A [Hammerhead Karoo](https://www.hammerhead.io/) extension for Sony® headphones. It talks to the headset with Sony's own protocol and puts the controls from the Sound Connect app on the Karoo. It has been used with a WF-1000XM5 on a Karoo 2.
 
+<p align="center">
+  <a href="https://github.com/nikosavola/karoo-xm-headphones/releases/latest/download/app-release.apk">
+    <img src="https://img.shields.io/github/v/release/nikosavola/karoo-xm-headphones?label=Download%20APK&style=for-the-badge&logo=android&logoColor=white&color=2ea44f" alt="Download the latest APK">
+  </a>
+</p>
+
 ## Install
 
 The APK is attached to every [release](https://github.com/nikosavola/karoo-xm-headphones/releases). On a Karoo 3, open the release page on your phone, long press the APK link and share it with the Hammerhead Companion app. On a Karoo 2, download it and run `adb install`. Then pair the headset in Karoo's Bluetooth settings, which is also where its audio goes.
